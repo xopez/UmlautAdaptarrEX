@@ -1,0 +1,22 @@
+# Local helpers for dev/testing — NOT used in production.
+# Spin up only when you need them:
+#   docker compose -f docker-compose.dev.yml up -d
+# UmlautAdaptarrEX itself runs on the host via `pnpm dev`. Prowlarr inside the
+# container reaches the host proxy on `:5006` via `host.docker.internal`
+# (Docker Desktop on macOS/Windows) or via the host-gateway alias mapped below
+# (Linux), which resolves to the host's IP from inside the container.
+services:
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr-dev
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Berlin
+    volumes:
+      - ./dev/prowlarr:/config
+    ports:
+      - "9696:9696"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

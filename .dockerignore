@@ -1,0 +1,38 @@
+.git/
+.github/
+.idea/
+.vscode/
+
+node_modules/
+.next/
+dist/
+out/
+coverage/
+test-results/
+playwright-report/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Prisma data + SQLite files (host-mounted at runtime)
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Build artifacts
+*.tsbuildinfo
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Legacy .NET sources — never needed in image
+old_code/
+
+# Local dev helpers
+dev/

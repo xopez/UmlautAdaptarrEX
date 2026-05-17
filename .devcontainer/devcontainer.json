@@ -1,0 +1,64 @@
+{
+  "name": "UmlautAdaptarrEX",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "node",
+  "containerEnv": {
+    "NEXT_TELEMETRY_DISABLED": "1",
+    "PNPM_VERSION": "10.33.3"
+  },
+  "mounts": [
+    "type=volume,source=umlautadaptarrex-pnpm-store,target=/home/node/.local/share/pnpm/store"
+  ],
+  "postCreateCommand": "sudo chown -R node:node /home/node/.local/share/pnpm && sudo corepack enable && corepack prepare pnpm@$PNPM_VERSION --activate && ([ -f .env ] || cp .env.example .env) && mkdir -p data && pnpm install --frozen-lockfile && pnpm prisma generate && pnpm prisma migrate deploy",
+  "postStartCommand": "echo 'Container ready. Start development with: pnpm dev (UI:5007, API:5005, Proxy:5006)'",
+  "forwardPorts": [5005, 5006, 5007],
+  "portsAttributes": {
+    "5005": {
+      "label": "Fastify API"
+    },
+    "5006": {
+      "label": "TCP Proxy"
+    },
+    "5007": {
+      "label": "Next.js UI",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "Prisma.prisma",
+        "bradlc.vscode-tailwindcss",
+        "ms-playwright.playwright",
+        "vitest.explorer",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "eslint.validate": [
+          "javascript",
+          "javascriptreact",
+          "typescript",
+          "typescriptreact"
+        ],
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "files.eol": "\n",
+        "files.insertFinalNewline": true,
+        "search.exclude": {
+          "**/node_modules": true,
+          "**/.next": true,
+          "**/dist": true
+        },
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

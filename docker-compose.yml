@@ -1,0 +1,20 @@
+services:
+  umlautadaptarrex:
+    build: .
+    image: umlautadaptarrex:2.0
+    container_name: umlautadaptarrex
+    restart: unless-stopped
+    ports:
+      - "5005:5005"  # Fastify API + WebSocket logs (URL the *arrs / Prowlarr point at)
+      - "5006:5006"  # TCP HTTP indexer proxy
+      - "5007:5007"  # Web UI (Next.js)
+    volumes:
+      # The entrypoint chowns /data to PUID:PGID on every start, so no manual
+      # `chown` is needed before first run.
+      - ./data:/data
+    environment:
+      - TZ=Europe/Berlin
+      # Override the runtime UID/GID if you want files in ./data to be owned
+      # by your host user instead of the default 1000:1000.
+      # - PUID=1000
+      # - PGID=1000

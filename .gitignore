@@ -1,0 +1,45 @@
+node_modules/
+.next/
+dist/
+out/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Prisma data files
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Build artifacts
+*.tsbuildinfo
+next-env.d.ts
+
+# Test artifacts
+coverage/
+playwright-report/
+test-results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+old_code/
+
+# Local dev helpers (docker-compose.dev.yml)
+dev/
+.pnpm-store/
+
+# Claude Code / MCP local config
+.claude/
+CLAUDE.md
+.mcp.json

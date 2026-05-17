@@ -1,0 +1,123 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mockSearchItem, mockArrInstance } = vi.hoisted(() => ({
+  mockSearchItem: { findMany: vi.fn() },
+  mockArrInstance: { findMany: vi.fn() },
+}));
+
+vi.mock("@/lib/db", () => ({
+  prisma: {
+    searchItem: mockSearchItem,
+    arrInstance: mockArrInstance,
+  },
+}));
+
+import { AppState } from "@/server/state";
+
+beforeEach(() => {
+  mockSearchItem.findMany.mockReset();
+  mockArrInstance.findMany.mockReset();
+  mockArrInstance.findMany.mockResolvedValue([]);
+});
+
+afterEach(() => {
+  mockSearchItem.findMany.mockReset();
+  mockArrInstance.findMany.mockReset();
+});
+
+describe("AppState default state", () => {
+  it("starts with NO_SETTINGS sentinel values", () => {
+    const state = new AppState();
+    expect(state.settings.appApiKey).toBe("");
+    expect(state.settings.proxyPort).toBe(5006);
+    expect(state.settings.setupComplete).toBe(false);
+    expect(state.settings.operationMode).toBe("proxy");
+  });
+
+  it("has no provider before reloadSettings runs", () => {
+    expect(new AppState().provider).toBeNull();
+  });
+
+  it("starts with neither tmdb nor tvdb available", () => {
+    const state = new AppState();
+    expect(state.tmdbAvailable).toBe(false);
+    expect(state.tvdbAvailable).toBe(false);
+  });
+
+  it("languagePack defaults to the aggregate of default-enabled plugins", () => {
+    const pack = new AppState().languagePack;
+    expect(pack).toBeDefined();
+    expect(Array.isArray(pack.activePlugins)).toBe(true);
+  });
+
+  it("providerForOrder returns null when no build options have been seeded", () => {
+    expect(new AppState().providerForOrder(["pcjones"])).toBeNull();
+  });
+
+  it("setLogger does not throw and is a no-op for query-side state", () => {
+    const state = new AppState();
+    const fakeLogger = {
+      child: () => fakeLogger,
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+      debug: () => {},
+      trace: () => {},
+      fatal: () => {},
+    } as never;
+    expect(() => state.setLogger(fakeLogger)).not.toThrow();
+  });
+});
+
+describe("AppState.loadSearchItemsFromDb", () => {
+  it("hydrates the in-memory index from persisted rows", async () => {
+    mockSearchItem.findMany.mockResolvedValueOnce([
+      {
+        id: "row1",
+        arrInstanceId: "inst-1",
+        arrId: 5,
+        externalId: "100",
+        title: "Show",
+        expectedTitle: "Show",
+        expectedAuthor: null,
+        germanTitle: "Sendung",
+        mediaType: "tv",
+        year: null,
+        titleSearchVariations: '["Show"]',
+        titleMatchVariations: '["Show","Sendung"]',
+        authorMatchVariations: "[]",
+      },
+    ]);
+
+    const state = new AppState();
+    await state.loadSearchItemsFromDb();
+
+    const item = state.getByExternalId("tv", "100");
+    expect(item?.title).toBe("Show");
+    expect(item?.titleMatchVariations).toEqual(["Show", "Sendung"]);
+  });
+
+  it("clears existing index entries before re-loading", async () => {
+    const state = new AppState();
+    state.indexItem({
+      id: "old",
+      arrInstanceId: "i",
+      arrId: 1,
+      externalId: "stale",
+      title: "Stale",
+      expectedTitle: "Stale",
+      expectedAuthor: null,
+      germanTitle: null,
+      mediaType: "tv",
+      year: null,
+      titleSearchVariations: [],
+      titleMatchVariations: ["Stale"],
+      authorMatchVariations: [],
+    });
+    expect(state.getByExternalId("tv", "stale")).not.toBeNull();
+
+    mockSearchItem.findMany.mockResolvedValueOnce([]);
+    await state.loadSearchItemsFromDb();
+    expect(state.getByExternalId("tv", "stale")).toBeNull();
+  });
+});

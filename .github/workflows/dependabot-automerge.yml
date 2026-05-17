@@ -1,0 +1,56 @@
+name: Dependabot auto-merge
+
+# Automatically approve and enable auto-merge for Dependabot PRs once required
+# CI checks pass. Conservative policy: patch and minor bumps merge themselves;
+# major bumps stay open for manual review.
+#
+# GitHub-side prerequisites (configured once in the repo settings):
+#   1. Settings → General → Pull Requests → "Allow auto-merge" enabled.
+#   2. Settings → Branches → branch protection on `main` requires the
+#      "Typecheck, lint, test, build" check from verify.yml. Auto-merge waits
+#      for those required checks before completing the merge.
+#   3. Settings → Code and automation → Actions → General → Workflow
+#      permissions: "Read and write permissions" + "Allow GitHub Actions to
+#      create and approve pull requests".
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: Auto-merge Dependabot PR
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Approve PR
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        run: gh pr review --approve "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for patch and minor updates
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on major updates
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr comment "$PR_URL" --body "Major version bump for **${PKG}** — auto-merge skipped, please review manually."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PKG: ${{ steps.meta.outputs.dependency-names }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

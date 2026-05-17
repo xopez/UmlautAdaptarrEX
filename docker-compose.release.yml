@@ -1,0 +1,37 @@
+# Release compose file: pulls the published image from Docker Hub instead of
+# building locally. No repository checkout required.
+#
+# Start:
+#   docker compose -f docker-compose.release.yml up -d
+#
+# Update:
+#   docker compose -f docker-compose.release.yml pull
+#   docker compose -f docker-compose.release.yml up -d
+#
+# The entrypoint chowns /data to PUID:PGID on every start, so no manual
+# `chown` is needed before first run.
+#
+# Forks: override the image by exporting UMLAUTADAPTARREX_IMAGE before
+# running `docker compose`, or by setting it in a `.env` file next to this
+# compose file:
+#   UMLAUTADAPTARREX_IMAGE=myuser/myfork:latest
+
+services:
+  umlautadaptarrex:
+    image: ${UMLAUTADAPTARREX_IMAGE:-lexfi/umlautadaptarrex:latest}
+    container_name: umlautadaptarrex
+    restart: unless-stopped
+    ports:
+      - "5005:5005" # Fastify API + WebSocket logs (URL the *arrs / Prowlarr point at)
+      - "5006:5006" # TCP HTTP indexer proxy
+      - "5007:5007" # Web UI (Next.js)
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=Europe/Berlin
+      # Override the runtime UID/GID if you want files in ./data to be owned
+      # by your host user instead of the default 1000:1000.
+      # - PUID=1000
+      # - PGID=1000
+      # Pino log level: trace, debug, info, warn, error, fatal. Defaults to info.
+      # - LOG_LEVEL=info

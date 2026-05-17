@@ -1,0 +1,179 @@
+import {
+  normalizeForComparison,
+  normalizedCharContribution,
+} from "../normalization/comparison";
+import { getActiveLanguagePack, type LanguagePack } from "../plugins";
+import { escapeRegex, findFirstSeparator } from "./separator";
+
+export interface RenameSearchItem {
+  expectedTitle: string;
+  titleMatchVariations: string[];
+  /**
+   * Release year for movies (and TV first-air year). When present and the
+   * release title carries a 4-digit year outside the tolerance window, the
+   * rewrite is refused. Disambiguates franchise overlap such as a Formula 1
+   * race recording vs. the 2025 "F1 - Der Film".
+   */
+  year?: number | null;
+  /**
+   * Tolerance window in years around `year`. `null` disables the check
+   * entirely (year-matching off). A non-negative integer accepts release-
+   * name years within +/-N. Default is 1 year, which absorbs common
+   * production-vs-release-year skew without losing disambiguation power.
+   */
+  yearMatchingTolerance?: number | null;
+}
+
+const DEFAULT_YEAR_TOLERANCE = 1;
+
+export interface RenameResult {
+  rewrittenTitle: string | null;
+  reason?:
+    | "match-equals-expected"
+    | "ambiguous-prefix"
+    | "token-continuation"
+    | "year-mismatch"
+    | "no-match";
+}
+
+const ALPHANUMERIC_RE = /[A-Za-z0-9]/;
+const YEAR_TOKEN_RE = /(?<![A-Za-z0-9])(19|20)\d{2}(?![A-Za-z0-9])/g;
+// Release-format tags that title providers occasionally bake into alias
+// strings (TMDB/TVDB return e.g. "Galaxy Wars Reckoning 3D"). When such
+// a variation matches the original, the trailing tag belongs to the
+// release name, not the title, and must stay in the suffix during rewrite.
+const RELEASE_TAG_TAIL_RE = /([\s._-])(3D|4K|HDR|IMAX)$/i;
+
+function releaseYears(title: string): number[] {
+  const years: number[] = [];
+  for (const match of title.matchAll(YEAR_TOKEN_RE)) {
+    years.push(Number(match[0]));
+  }
+  return years;
+}
+
+export function renameForMoviesAndTv(
+  originalTitle: string,
+  searchItem: RenameSearchItem,
+  pack: LanguagePack = getActiveLanguagePack(),
+): RenameResult {
+  const normalizedOriginal = normalizeForComparison(originalTitle, pack);
+  const variations = [...searchItem.titleMatchVariations].sort(
+    (a, b) =>
+      normalizeForComparison(b, pack).length -
+      normalizeForComparison(a, pack).length,
+  );
+
+  // Year disambiguation: if the search item knows its release year and the
+  // caller wants the year check (`yearMatchingTolerance` is a number, not
+  // null), the release title's 4-digit year token must lie within +/-N of
+  // the item's year. `yearMatchingTolerance === null` disables the check
+  // entirely so per-instance opt-out works without dropping the year value
+  // itself. Defaulting to 1 absorbs production-vs-release-year skew.
+  const tolerance =
+    searchItem.yearMatchingTolerance === undefined
+      ? DEFAULT_YEAR_TOLERANCE
+      : searchItem.yearMatchingTolerance;
+  if (searchItem.year != null && tolerance !== null) {
+    const years = releaseYears(originalTitle);
+    if (years.length > 0) {
+      const itemYear = searchItem.year;
+      const inTolerance = years.some(
+        (y) => Math.abs(y - itemYear) <= tolerance,
+      );
+      if (!inTolerance) {
+        return { rewrittenTitle: null, reason: "year-mismatch" };
+      }
+    }
+  }
+
+  for (const variation of variations) {
+    if (variation === searchItem.expectedTitle) continue;
+
+    const normalizedVariation = normalizeForComparison(variation, pack);
+    if (!normalizedVariation) continue;
+    if (!normalizedOriginal.startsWith(normalizedVariation)) continue;
+
+    const separator = findFirstSeparator(originalTitle);
+    const newTitlePrefix = searchItem.expectedTitle.replace(/ /g, separator);
+
+    // Walk originalTitle counting how many *normalized* chars each char
+    // contributes. Comparison-map entries can expand 1→N (e.g. German ß →
+    // "ss") and accents not covered by an active plugin still normalize to
+    // a base letter (é → "e"); a raw word-char count would slice the
+    // suffix wrong by N per char, eating the next token (e.g. variation
+    // "Strasse" against "Straße.Test.S01E01" would return ".est.S01E01"
+    // and "Cafe" against "Café.S01E01" would return "01E01").
+    const targetCount = normalizedVariation.length;
+    let matchedNormalized = 0;
+    let endIdx = 0;
+    for (let i = 0; i < originalTitle.length; i++) {
+      const c = originalTitle[i]!;
+      matchedNormalized += normalizedCharContribution(c, pack);
+      endIdx = i + 1;
+      if (matchedNormalized >= targetCount) break;
+    }
+
+    // Token-boundary check: a normalized prefix-match isn't enough; the
+    // variation must end on a real token boundary in the *original* string.
+    // Otherwise variation "Mike Renko 2" (norm "mikerenko2") matches the
+    // start of "Mike.Renko.2016.German.DL..." (norm "mikerenko2016...")
+    // and the rewrite eats the leading "2" of the year, producing
+    // "Die.Renko.Jagd.016.German.DL...". Any non-alphanumeric
+    // (`.`, `-`, ` `, `_`, …) or end-of-string is a clean boundary.
+    const nextChar = originalTitle[endIdx];
+    if (nextChar !== undefined && ALPHANUMERIC_RE.test(nextChar)) {
+      continue;
+    }
+
+    // If the consumed prefix ends with a release-format tag (3D/4K/HDR/
+    // IMAX) at a token boundary, and the expectedTitle itself doesn't
+    // carry that tag, push the tag back into the suffix. Otherwise an
+    // alias like "Resident Evil: Afterlife 3D" eats the "3D" of
+    // "Resident.Evil.Afterlife.3D.2010..." and the rewrite drops it.
+    const tagMatch = RELEASE_TAG_TAIL_RE.exec(originalTitle.slice(0, endIdx));
+    if (tagMatch) {
+      const tag = tagMatch[2]!;
+      const tagInExpectedRe = new RegExp(
+        `(?:^|[^A-Za-z0-9])${tag}(?:$|[^A-Za-z0-9])`,
+        "i",
+      );
+      if (!tagInExpectedRe.test(searchItem.expectedTitle)) {
+        endIdx -= tag.length + 1;
+      }
+    }
+
+    let suffix = originalTitle.slice(endIdx);
+
+    // When expectedTitle starts with the variation (e.g. "Sigrid"), only
+    // rewrite if a strong release-marker follows directly — SxxExx for TV,
+    // a 4-digit year for movies. Otherwise the prefix is ambiguous (could
+    // be a different work that just shares the prefix).
+    if (
+      searchItem.expectedTitle.toLowerCase().startsWith(variation.toLowerCase())
+    ) {
+      const sep = escapeRegex(separator);
+      const markerRe = new RegExp(
+        `^${sep}(?:S\\d{1,4}E\\d{1,4}|(?:19|20)\\d{2}(?:${sep}|$))`,
+      );
+      if (!markerRe.test(suffix)) {
+        return { rewrittenTitle: null, reason: "ambiguous-prefix" };
+      }
+    }
+
+    suffix = suffix.replace(/^ +/, "");
+
+    let newTitle: string;
+    if (!suffix) {
+      newTitle = newTitlePrefix;
+    } else if (suffix.startsWith(separator)) {
+      newTitle = newTitlePrefix + suffix;
+    } else {
+      newTitle = `${newTitlePrefix}${separator}${suffix}`;
+    }
+
+    return { rewrittenTitle: newTitle };
+  }
+
+  return { rewrittenTitle: null, reason: "no-match" };
+}

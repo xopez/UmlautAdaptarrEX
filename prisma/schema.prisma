@@ -1,0 +1,275 @@
+// UmlautAdaptarrEX 2.0 — Prisma Schema
+// SQLite, Single-File DB. Prisma ist alleiniger Owner der Datenbank.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────────
+
+model AdminUser {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+model Session {
+  id        String    @id
+  userId    String
+  user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  lastUsed  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ── Settings (Single-Row) ─────────────────────────────────────────────────────
+
+model Setting {
+  id                   Int     @id @default(1)
+  appApiKey            String
+  proxyPort            Int     @default(5006)
+  // Credentials für den HTTP-Proxy auf Port 5006 (Prowlarr/Indexer-Auth).
+  // Default-Username = "UmlautAdaptarr"; Passwort wird beim ersten Boot
+  // mit nanoid(24) befüllt — siehe `AppState.reloadSettings`.
+  proxyUsername        String  @default("UmlautAdaptarr")
+  proxyPassword        String  @default("")
+  cacheDurationMinutes Int     @default(12)
+  titleApiHost         String  @default("https://umlautadaptarr.pcjones.de/api/v1")
+  tmdbApiKey           String?
+  // TVDB v4 API: API-Key (issued in https://thetvdb.com/api-information) plus
+  // optional Subscriber-PIN. Manche v4-Endpoints (z.B. ?meta=translations) sind
+  // nur mit gesetztem Pin erreichbar. Beides server-only, niemals an die UI.
+  tvdbApiKey           String?
+  tvdbPin              String?
+  userAgent            String  @default("UmlautAdaptarrEX/2.0")
+  setupComplete        Boolean @default(false)
+  // Optional: persistierte Prowlarr-Verbindung. Wir nutzen sie, um den
+  // Import-Dialog vorzubefüllen, damit der User die Creds nicht jedes Mal
+  // neu eingeben muss. apiKey ist sensibel — wird nie an die UI geliefert,
+  // nur ein "configured"-Flag.
+  prowlarrHost         String?
+  prowlarrApiKey       String?
+  // Wie viele Tage Logs in der DB vorgehalten werden (Cleanup-Job kürzt alles
+  // Ältere). Default 3 — genug, um vergangene Fehler nachzusehen, ohne dass
+  // die Tabelle ungebremst wächst.
+  logRetentionDays     Int     @default(3)
+  // Mindest-Spacing zwischen zwei Calls gegen denselben Indexer-Host (ms).
+  // Schützt vor 429/Bans bei Free-Tier-Indexern. Bei 429/Retry-After wird der
+  // Limiter dynamisch hochgesetzt (siehe HostRateLimiter.backoff).
+  indexerRateLimitMs   Int     @default(500)
+  // Maximale Wartezeit pro Indexer-Request (Sekunden). Wird einheitlich auf
+  // connect-, headers- und body-Timeout des HTTP-Clients angewendet. Greift,
+  // wenn ein Indexer langsam antwortet oder die TCP-Verbindung hängt
+  // (vorher: hartkodierter undici-Default von 10s connectTimeout).
+  indexerTimeoutSeconds Int    @default(60)
+  // HMAC-Secret für CSRF-Tokens (base64). Wird beim ersten Boot via
+  // `ensureCsrfSecret()` generiert und persistiert, damit Tokens
+  // Container-Restarts überleben. ENV `CSRF_SECRET` überschreibt die DB.
+  csrfSecret           String?
+  // Steuert, welche Komponenten aktiv sind. "proxy" → nur HTTP-Proxy auf 5006;
+  // "legacy" → nur Legacy-Indexer-Routes auf 5005; "both" → beide aktiv.
+  // Default = "proxy" (empfohlener Standard); der Setup-Wizard kann das
+  // explizit überschreiben.
+  operationMode        String  @default("proxy")
+  // Pause-Schalter: solange `pausedUntil > now`, leitet der Legacy-Indexer-Pfad
+  // alle Sonarr/Radarr-Anfragen unmanipuliert an die Indexer durch und schreibt
+  // weder Antwort-Titel um noch fügt er Umlaut-Varianten zur Suche hinzu.
+  // NULL = nicht pausiert. Sentinel-Datum (Jahr 9999) = unbegrenzte Pause.
+  pausedUntil          DateTime?
+  // SSRF-Strict-Mode: wenn true, blockiert testConnection/Prowlarr-Fetch
+  // alles, was auf eine private/Loopback-Adresse zeigt (192.168.*, 10.*,
+  // ::1, *.local, host.docker.internal, …). Default false, weil
+  // selbst-gehostete Setups praktisch immer Sonarr/Radarr im selben LAN
+  // oder Docker-Netz erreichen müssen. Cloud-/Multi-Tenant-Betreiber
+  // sollten das aktivieren, damit pre-setup keine internen Ziele
+  // angeprobt werden können. ENV `UA_BLOCK_PRIVATE_INSTANCE_HOSTS=true`
+  // überschreibt diesen Wert zur Laufzeit.
+  blockPrivateInstanceHosts Boolean @default(false)
+}
+
+// ── Arr Instances ─────────────────────────────────────────────────────────────
+
+model ArrInstance {
+  id                String       @id @default(cuid())
+  type              String
+  name              String
+  host              String
+  apiKey            String
+  enabled           Boolean      @default(true)
+  // Provider-Reihenfolge als CSV ("pcjones,tvdb,tmdb"). Sonarr/Radarr nutzen
+  // sie pro Sprach-Tier (DE: pcjones+tvdb+tmdb, non-DE: tvdb+tmdb). Lidarr
+  // und Readarr brauchen keinen Title-Provider, deshalb NULL.
+  providerOrder     String?
+  // Year-Disambiguation beim Title-Matching. Wenn aktiv, lehnt der Matcher
+  // Releases ab, deren 4-stelliger Year-Token im Dateinamen ausserhalb des
+  // Toleranzfensters um SearchItem.year liegt. Wirkt nur fuer Sonarr/Radarr;
+  // Lidarr/Readarr nutzen einen anderen Match-Pfad.
+  enableYearMatching     Boolean @default(true)
+  yearMatchingTolerance  Int     @default(1)
+  lastSyncAt        DateTime?
+  lastSyncError     String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  searchItems       SearchItem[]
+  syncRuns          SyncRun[]
+
+  @@unique([type, name])
+  @@index([enabled])
+}
+
+// ── SearchItems (Cache der Sonarr/Radarr/Lidarr/Readarr-Library) ──────────────
+
+model SearchItem {
+  id                    String      @id @default(cuid())
+  arrInstanceId         String
+  arrInstance           ArrInstance @relation(fields: [arrInstanceId], references: [id], onDelete: Cascade)
+  arrId                 Int
+  externalId            String
+  title                 String
+  expectedTitle         String
+  expectedAuthor        String?
+  germanTitle           String?
+  mediaType             String
+  // Release year (movies) / first-air year (TV). NULL for music/books and for
+  // legacy rows that pre-date this column. The matching layer uses it to
+  // reject false positives when the release title carries a different year
+  // (e.g. a 2026 Formula-1 race recording vs. the 2025 "F1 - Der Film").
+  year                  Int?
+  titleSearchVariations String
+  titleMatchVariations  String
+  authorMatchVariations String
+  aliases               String?
+  updatedAt             DateTime    @updatedAt
+
+  @@unique([arrInstanceId, externalId])
+}
+
+// ── Title-API Cache (Provider-Antworten pro mediaType+externalId) ─────────────
+// Schlüssel = `${mediaType}:${externalId}` (z.B. `tv:12345`, `movie:67890`).
+// Positive Treffer leben ohne Verfall, bis der Nutzer den Cache via UI leert.
+// Negativ-Treffer bekommen ein `expiresAt`, damit ein vorübergehend
+// ausgefallener Provider nicht für immer als "nichts gefunden" persistiert
+// wird. Pro Sprache eine `TitleTranslation`-Row.
+
+model TitleApiCache {
+  id           String             @id
+  fetchedAt    DateTime           @default(now())
+  expiresAt    DateTime?
+  translations TitleTranslation[]
+
+  @@index([expiresAt])
+}
+
+// Pro `TitleApiCache`-Row eine Zeile pro Sprache. Wird vom
+// `DbCachedTitleProvider` befüllt, sobald ein Provider (pcjones / TMDB) Titel
+// in einer bestimmten Sprache liefert. `title=NULL` markiert einen
+// expliziten Negativ-Treffer (Provider hat *nichts* in dieser Sprache);
+// dadurch wiederholen wir den Outbound-Call nicht ad infinitum.
+model TitleTranslation {
+  id          String        @id @default(cuid())
+  cacheId     String
+  cache       TitleApiCache @relation(fields: [cacheId], references: [id], onDelete: Cascade)
+  // BCP-47 short code: "de", "sv", "fr", "en", …
+  lang        String
+  title       String?
+  // JSON-Array von alias-Strings (`["…","…"]`); separat pro Sprache.
+  aliasesJson String?
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([cacheId, lang])
+}
+
+// ── Request / Rename History ──────────────────────────────────────────────────
+
+model RequestHistory {
+  id         String   @id @default(cuid())
+  apiKey     String
+  domain     String
+  type       String
+  query      String?
+  externalId String?
+  status     Int
+  durationMs Int
+  cacheHit   Boolean
+  createdAt  DateTime @default(now())
+
+  // Listing-/Filter-Pfade: order by `createdAt desc` (immer), optional Filter
+  // auf `type` oder `domain`. `cacheHit`-Composite beschleunigt die
+  // Cache-Hit-Rate-Stats (`count(createdAt >= …, cacheHit: true)`).
+  @@index([createdAt])
+  @@index([createdAt, cacheHit])
+  @@index([type])
+  @@index([domain])
+}
+
+model RenameHistory {
+  id                  String   @id @default(cuid())
+  originalTitle       String
+  rewrittenTitle      String
+  mediaType           String
+  matchedSearchItemId String?
+  createdAt           DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([mediaType])
+}
+
+// ── Sync ──────────────────────────────────────────────────────────────────────
+
+model SyncRun {
+  id                String       @id @default(cuid())
+  arrInstanceId     String?
+  arrInstance       ArrInstance? @relation(fields: [arrInstanceId], references: [id], onDelete: SetNull)
+  status            String
+  startedAt         DateTime     @default(now())
+  finishedAt        DateTime?
+  itemsCount        Int          @default(0)
+  // Outbound API hits per provider during this run (cache misses only).
+  // The same externalId can count toward both columns when pcjones returns
+  // DE and TMDB fills a non-DE language for the same item.
+  pcjonesItemsCount Int          @default(0)
+  tmdbItemsCount    Int          @default(0)
+  tvdbItemsCount    Int          @default(0)
+  errorMessage      String?
+
+  @@index([startedAt])
+  @@index([status])
+  @@index([arrInstanceId, startedAt])
+}
+
+// ── Plugins (Built-in Variation-Plugins, per-Plugin Enable-Flag) ──────────────
+//
+// Eingebaute Plugins (z.B. "german-umlauts", "swedish-umlauts") liegen im
+// Code unter `src/domain/plugins/`. Diese Tabelle hält pro Plugin nur den
+// Enable-Status. Auf jedem Boot werden alle bekannten Plugin-IDs mit ihrem
+// `defaultEnabled`-Wert geseedet, falls die Zeile noch nicht existiert.
+// Unbekannte Plugin-IDs in der DB werden ignoriert (z.B. nach Plugin-
+// Entfernung) — die Zeile bleibt liegen, falls das Plugin später wieder
+// auftaucht.
+
+model Plugin {
+  id      String  @id
+  enabled Boolean
+}
+
+// ── Logs (Ringbuffer-artig, max ~50k Rows) ────────────────────────────────────
+
+model LogEntry {
+  id        String   @id @default(cuid())
+  level     String
+  message   String
+  context   String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([level])
+}
