@@ -11,4 +11,4 @@ PGID=$(printf '%s' "${PGID:-1000}" | tr -d '[:space:]')
 mkdir -p /data
 chown -R "$PUID:$PGID" /data
 
-exec su-exec "$PUID:$PGID" "$@"
+exec gosu "$PUID:$PGID" "$@"

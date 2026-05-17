@@ -1,20 +1,26 @@
 # syntax=docker/dockerfile:1.7
-FROM node:24-alpine AS base
+FROM node:26-bookworm-slim AS base
 WORKDIR /app
-RUN apk add --no-cache openssl libstdc++ su-exec \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl gosu wget ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
   && npm install -g pnpm@10.33.3 \
   && pnpm config set store-dir /pnpm/store
 
 # ── Full install (incl. devDeps for next build / tsup / prisma generate) ─────
 FROM base AS deps
-RUN apk add --no-cache --virtual .build-deps python3 make g++
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
 # `postinstall` runs `prisma generate`, which needs the schema + config — copy
 # them in alongside the manifests so the install step doesn't fail.
 COPY package.json pnpm-lock.yaml prisma.config.ts ./
 COPY prisma ./prisma
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
-RUN apk del .build-deps
+RUN apt-get purge -y python3 make g++ \
+  && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/*
 
 # ── Builder ──────────────────────────────────────────────────────────────────
 FROM deps AS builder
