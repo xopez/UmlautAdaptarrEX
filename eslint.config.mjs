@@ -3,6 +3,9 @@ import next from "eslint-config-next";
 export default [
   ...next,
   {
+    settings: { react: { version: "19" } },
+  },
+  {
     ignores: [
       ".next/**",
       "dist/**",

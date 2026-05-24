@@ -353,7 +353,7 @@ For a reproducible dev environment, you can use the included devcontainer:
 2. Run `Dev Containers: Reopen in Container`.
 3. After the container has started: `pnpm dev`.
 
-The container ships Node 24 (dev) resp. Node 26 (production image) + pnpm 10.33.3, forwards ports `5005/5006/5007` and sets recommended VS Code
+The container ships Node 24 (dev) resp. Node 26 (production image) + pnpm 11.3.0, forwards ports `5005/5006/5007` and sets recommended VS Code
 extensions/settings for TypeScript, Next.js, Prisma, Tailwind, ESLint/Prettier, Vitest and Playwright.
 After `pnpm dev` you reach the UI on port `5007` and the API on port `5005` (directly or via VS Code port
 forwarding). The TCP proxy is reachable on port `5006`.
@@ -389,7 +389,7 @@ src/
 
 ## Stack
 
-- Node 24+ (production image: Node 26) / TypeScript / pnpm 10
+- Node 24+ (production image: Node 26) / TypeScript / pnpm 11
 - Next.js 16 / React 19 / Tailwind 4 / shadcn (new-york)
 - Fastify 5 / Prisma 7 / SQLite (better-sqlite3)
 - Zod 4 / next-intl / @tanstack/react-query

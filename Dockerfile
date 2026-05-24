@@ -4,7 +4,7 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl gosu wget ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
-  && npm install -g pnpm@10.33.3 \
+  && npm install -g pnpm@11.3.0 \
   && pnpm config set store-dir /pnpm/store
 
 # ── Full install (incl. devDeps for next build / tsup / prisma generate) ─────
