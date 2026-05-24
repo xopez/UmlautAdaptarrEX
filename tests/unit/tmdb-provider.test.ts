@@ -221,6 +221,41 @@ describe("TmdbProvider.fetchByExternalId", () => {
     expect(await provider().fetchByExternalId("movie", "1")).toBeNull();
   });
 
+  it("keeps movie translations when alternative_titles fails (partial-result resilience)", async () => {
+    mockMovieDb.movieTranslations.mockResolvedValueOnce({
+      translations: [{ iso_639_1: "de", data: { title: "Der Film" } }],
+    });
+    mockMovieDb.movieAlternativeTitles.mockRejectedValueOnce(
+      new Error("ETIMEDOUT"),
+    );
+    const out = await provider().fetchByExternalId("movie", "550");
+    expect(out?.titlesByLang).toEqual({ de: "Der Film" });
+    expect(out?.aliasesByLang ?? {}).toEqual({});
+  });
+
+  it("keeps movie alternative_titles when translations fails (partial-result resilience)", async () => {
+    mockMovieDb.movieTranslations.mockRejectedValueOnce(
+      new Error("ETIMEDOUT"),
+    );
+    mockMovieDb.movieAlternativeTitles.mockResolvedValueOnce({
+      titles: [{ iso_3166_1: "DE", title: "Alt" }],
+    });
+    const out = await provider().fetchByExternalId("movie", "550");
+    expect(out?.aliasesByLang?.de).toEqual(["Alt"]);
+    expect(out?.titlesByLang ?? {}).toEqual({});
+  });
+
+  it("keeps tv translations when alternative_titles fails", async () => {
+    mockMovieDb.tvTranslations.mockResolvedValueOnce({
+      translations: [{ iso_639_1: "de", data: { name: "Die Show" } }],
+    });
+    mockMovieDb.tvAlternativeTitles.mockRejectedValueOnce(
+      new Error("ETIMEDOUT"),
+    );
+    const out = await provider().fetchByExternalId("tv", "100");
+    expect(out?.titlesByLang).toEqual({ de: "Die Show" });
+  });
+
   it("does not include duplicate aliases for the same lang", async () => {
     mockMovieDb.movieTranslations.mockResolvedValueOnce({ translations: [] });
     mockMovieDb.movieAlternativeTitles.mockResolvedValueOnce({

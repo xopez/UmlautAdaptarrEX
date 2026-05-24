@@ -20,6 +20,19 @@ interface TvdbProviderOptions {
 const TVDB_HOST = "api4.thetvdb.com";
 const TVDB_BASE = `https://${TVDB_HOST}/v4`;
 
+// TVDB v4 publishes no explicit rate ceiling, just a "don't spam" guideline.
+// 100 ms between request starts caps us at 10 req/s — conservative for a
+// service that handles millions of calls per day across all users, but well
+// below anything that could be construed as spam from a single integration.
+// Each fetchByExternalId issues 1–3 calls (resolve + translations [+ extended
+// fallback]), so 10 req/s translates to ~3–10 items/s end-to-end.
+const TVDB_MIN_INTERVAL_MS = 100;
+
+// Parallel in-flight bulk lookups. Lower than TMDB because each TVDB lookup
+// can itself fan out to multiple HTTP calls; 5 keeps the limiter busy without
+// flooding the API with bursts of nested calls.
+const TVDB_BULK_CONCURRENCY = 5;
+
 // TVDB v4 uses ISO 639-3 (three-letter codes) for translations and aliases.
 // The rest of the app uses ISO 639-1 codes ("de", "en", ...), so we map both
 // directions. The inverse map is used while parsing translations so we cache
@@ -192,7 +205,7 @@ async function tvdbLogin(apiKey: string, pin: string | null): Promise<string> {
  */
 export class TvdbProvider implements TitleProvider {
   readonly name = "tvdb";
-  private readonly limiter = new HostRateLimiter(250);
+  private readonly limiter = new HostRateLimiter(TVDB_MIN_INTERVAL_MS);
   private readonly log: Logger | null;
   private token: string | null = null;
   private readonly remoteIdCache = new Map<string, number | null>();
@@ -340,27 +353,37 @@ export class TvdbProvider implements TitleProvider {
     if (externalIds.length === 0) return out;
 
     this.log?.info(
-      { type, count: externalIds.length, langs: langs ?? ["de"] },
-      "tvdb bulk request (sequential, no native bulk endpoint)",
+      {
+        type,
+        count: externalIds.length,
+        langs: langs ?? ["de"],
+        concurrency: TVDB_BULK_CONCURRENCY,
+        minIntervalMs: TVDB_MIN_INTERVAL_MS,
+      },
+      "tvdb bulk request",
     );
     let resolved = 0;
-    for (const id of externalIds) {
-      const p = await this.fetchByExternalId(type, id, langs);
-      if (p) {
-        out.set(id, p);
-        if (Object.keys(p.titlesByLang).length > 0) resolved += 1;
-        // Stream per-id result so callers can persist immediately.
-        if (opts?.onItem) {
-          try {
-            await opts.onItem(id, p);
-          } catch (err) {
-            this.log?.warn(
-              { externalId: id, err },
-              "tvdb bulk onItem callback failed",
-            );
+    for (let i = 0; i < externalIds.length; i += TVDB_BULK_CONCURRENCY) {
+      const batch = externalIds.slice(i, i + TVDB_BULK_CONCURRENCY);
+      await Promise.all(
+        batch.map(async (id) => {
+          const p = await this.fetchByExternalId(type, id, langs);
+          if (!p) return;
+          out.set(id, p);
+          if (Object.keys(p.titlesByLang).length > 0) resolved += 1;
+          // Stream per-id result so callers can persist immediately.
+          if (opts?.onItem) {
+            try {
+              await opts.onItem(id, p);
+            } catch (err) {
+              this.log?.warn(
+                { externalId: id, err },
+                "tvdb bulk onItem callback failed",
+              );
+            }
           }
-        }
-      }
+        }),
+      );
     }
     this.log?.info(
       { type, requested: externalIds.length, withTitles: resolved },
@@ -441,16 +464,25 @@ export class TvdbProvider implements TitleProvider {
       return (await res.body.json()) as T;
     };
 
-    try {
-      return await doRequest();
-    } catch (err) {
-      const status = (err as { __status?: number }).__status;
-      if (status === 401) {
-        // Re-login exactly once and retry.
-        this.token = null;
-        return doRequest();
+    // Explicit attempt counter so a future change can't accidentally make
+    // this recursive — if the first 401 retry also returns 401 we surface
+    // the error to the caller instead of looping.
+    const MAX_ATTEMPTS = 2;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      try {
+        return await doRequest();
+      } catch (err) {
+        lastErr = err;
+        const status = (err as { __status?: number }).__status;
+        if (status === 401 && attempt < MAX_ATTEMPTS) {
+          // Re-login on the next attempt — token may have expired.
+          this.token = null;
+          continue;
+        }
+        throw err;
       }
-      throw err;
     }
+    throw lastErr;
   }
 }

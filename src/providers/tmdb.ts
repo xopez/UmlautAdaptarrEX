@@ -16,6 +16,19 @@ interface TmdbProviderOptions {
   logger?: Logger | undefined;
 }
 
+// TMDB documents the rate ceiling informally as "around 40 req/s" and returns
+// 429 when exceeded. 50 ms between request starts gives us 20 req/s, a 50%
+// safety margin that absorbs any other apps sharing the same outbound IP and
+// any future tightening of TMDB's policy.
+// Source: https://developer.themoviedb.org/docs/rate-limiting
+const TMDB_MIN_INTERVAL_MS = 50;
+
+// Parallel in-flight requests during fetchBulk. At ~250 ms per round-trip and
+// a 50 ms start interval, ~5 requests are typically in flight at steady state.
+// 10 keeps the limiter saturated even when individual lookups are slow,
+// without unbounded stacking.
+const TMDB_BULK_CONCURRENCY = 10;
+
 // TMDB API expects a v3 API key (32-char hex). v4 Read Access Tokens (JWT
 // "eyJ…") are *not* supported by `moviedb-promise` — sending one as the
 // constructor arg fails at request time. We detect by prefix here so the
@@ -139,7 +152,7 @@ function countryToLang(iso_3166_1: string | undefined): string | null {
 
 export class TmdbProvider implements TitleProvider {
   readonly name = "tmdb";
-  private readonly limiter = new HostRateLimiter(250);
+  private readonly limiter = new HostRateLimiter(TMDB_MIN_INTERVAL_MS);
   private readonly client: MovieDb;
   private readonly log: Logger | null;
 
@@ -210,26 +223,25 @@ export class TmdbProvider implements TitleProvider {
     const started = process.hrtime.bigint();
     let translations: RawTranslation[] = [];
     let alternative: RawAlternativeTitle[] = [];
-    try {
-      if (type === "movie") {
-        const [t, a] = await Promise.all([
-          this.client.movieTranslations(idNum),
-          this.client.movieAlternativeTitles(idNum),
-        ]);
-        translations = (t.translations ?? []) as RawTranslation[];
-        alternative = (a.titles ?? []) as RawAlternativeTitle[];
-      } else {
-        const [t, a] = await Promise.all([
-          this.client.tvTranslations(idNum),
-          this.client.tvAlternativeTitles(idNum),
-        ]);
-        translations = (t.translations ?? []) as RawTranslation[];
-        // TV alternative titles are returned under `results`, not `titles`.
-        alternative = ((a as { results?: RawAlternativeTitle[] }).results ??
-          []) as RawAlternativeTitle[];
-      }
-    } catch (err) {
+    // Use allSettled so a transient failure on one of the two endpoints
+    // (e.g. alternative_titles times out) does not discard the data we
+    // already fetched from the other. Authorization failures still surface
+    // because both endpoints reject identically with 401, but we only
+    // classify the lookup as failed when BOTH halves rejected.
+    const [tRes, aRes] =
+      type === "movie"
+        ? await Promise.allSettled([
+            this.client.movieTranslations(idNum),
+            this.client.movieAlternativeTitles(idNum),
+          ])
+        : await Promise.allSettled([
+            this.client.tvTranslations(idNum),
+            this.client.tvAlternativeTitles(idNum),
+          ]);
+
+    if (tRes.status === "rejected" && aRes.status === "rejected") {
       const durationMs = Number(process.hrtime.bigint() - started) / 1_000_000;
+      const err = tRes.reason;
       const status = (err as { response?: { status?: number } })?.response
         ?.status;
       const outcome =
@@ -260,6 +272,29 @@ export class TmdbProvider implements TitleProvider {
         "tmdb lookup error",
       );
       return { payload: null, outcome, titleLangs: [] };
+    }
+
+    if (tRes.status === "fulfilled") {
+      translations = (tRes.value.translations ?? []) as RawTranslation[];
+    } else {
+      this.log?.warn(
+        { externalId, type, err: tRes.reason },
+        "tmdb partial failure: translations rejected, continuing with alternative_titles only",
+      );
+    }
+    if (aRes.status === "fulfilled") {
+      if (type === "movie") {
+        alternative = ((aRes.value as { titles?: RawAlternativeTitle[] })
+          .titles ?? []) as RawAlternativeTitle[];
+      } else {
+        alternative = ((aRes.value as { results?: RawAlternativeTitle[] })
+          .results ?? []) as RawAlternativeTitle[];
+      }
+    } else {
+      this.log?.warn(
+        { externalId, type, err: aRes.reason },
+        "tmdb partial failure: alternative_titles rejected, continuing with translations only",
+      );
     }
     const durationMs = Number(process.hrtime.bigint() - started) / 1_000_000;
 
@@ -359,8 +394,14 @@ export class TmdbProvider implements TitleProvider {
 
     const total = externalIds.length;
     this.log?.info(
-      { type, count: total, langs: langs ?? ["*"] },
-      "tmdb bulk request (sequential, no native bulk endpoint)",
+      {
+        type,
+        count: total,
+        langs: langs ?? ["*"],
+        concurrency: TMDB_BULK_CONCURRENCY,
+        minIntervalMs: TMDB_MIN_INTERVAL_MS,
+      },
+      "tmdb bulk request",
     );
 
     const started = process.hrtime.bigint();
@@ -377,37 +418,42 @@ export class TmdbProvider implements TitleProvider {
     // one title in that language. The most useful debug signal for "why is
     // half my library missing German titles?" — beats the binary withTitles.
     const titlesByLang: Record<string, number> = {};
-    // Progress milestones: every 25% for libraries >= 200, otherwise quiet.
-    // Spammed every 100 would drown smaller installs in noise.
-    const progressEvery = total >= 200 ? Math.ceil(total / 4) : Infinity;
     let processed = 0;
+    // Progress milestones logged once per batch boundary for libraries >= 200.
+    const logProgressEvery = total >= 200 ? Math.ceil(total / 4) : Infinity;
+    let nextProgressAt = logProgressEvery;
 
-    for (const id of externalIds) {
-      const result = await this.fetchByExternalIdDetailed(type, id, langs);
-      outcomeCounts[result.outcome] += 1;
-      if (result.payload) {
-        out.set(id, result.payload);
-        // Stream the per-id result so callers (DbCachedTitleProvider) can
-        // checkpoint progress to the cache immediately. Persist failures are
-        // logged inside the callback, never rethrown — a broken cache must
-        // not abort a sync.
-        if (opts?.onItem) {
-          try {
-            await opts.onItem(id, result.payload);
-          } catch (err) {
-            this.log?.warn(
-              { externalId: id, err },
-              "tmdb bulk onItem callback failed",
-            );
+    for (let i = 0; i < externalIds.length; i += TMDB_BULK_CONCURRENCY) {
+      const batch = externalIds.slice(i, i + TMDB_BULK_CONCURRENCY);
+      await Promise.all(
+        batch.map(async (id) => {
+          const result = await this.fetchByExternalIdDetailed(type, id, langs);
+          outcomeCounts[result.outcome] += 1;
+          if (result.payload) {
+            out.set(id, result.payload);
+            // Stream the per-id result so callers (DbCachedTitleProvider) can
+            // checkpoint progress to the cache immediately. Persist failures
+            // are logged inside the callback, never rethrown — a broken cache
+            // must not abort a sync.
+            if (opts?.onItem) {
+              try {
+                await opts.onItem(id, result.payload);
+              } catch (err) {
+                this.log?.warn(
+                  { externalId: id, err },
+                  "tmdb bulk onItem callback failed",
+                );
+              }
+            }
           }
-        }
-      }
-      for (const lang of result.titleLangs) {
-        titlesByLang[lang] = (titlesByLang[lang] ?? 0) + 1;
-      }
+          for (const lang of result.titleLangs) {
+            titlesByLang[lang] = (titlesByLang[lang] ?? 0) + 1;
+          }
+          processed += 1;
+        }),
+      );
 
-      processed += 1;
-      if (processed % progressEvery === 0 && processed < total) {
+      if (processed >= nextProgressAt && processed < total) {
         const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
         const itemsPerSec = (processed / elapsedMs) * 1000;
         this.log?.info(
@@ -421,6 +467,7 @@ export class TmdbProvider implements TitleProvider {
           },
           "tmdb bulk progress",
         );
+        nextProgressAt += logProgressEvery;
       }
     }
 

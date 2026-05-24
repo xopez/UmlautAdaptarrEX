@@ -2,6 +2,11 @@ import { request } from "undici";
 import type { Logger } from "pino";
 import type { SearchItemDerived } from "@/domain/variations/index";
 
+// How many parent→child fetches to run in parallel inside fetchNested.
+// Small enough to stay friendly to a single Lidarr/Readarr instance; large
+// enough to noticeably shorten a 200-artist sync.
+const NESTED_CONCURRENCY = 8;
+
 export interface ArrClientOptions {
   instanceId: string;
   instanceName: string;
@@ -33,6 +38,11 @@ export abstract class ArrClient {
    * Readarr (author→book). The subclass supplies *what* to fetch and *how*
    * to map; this helper owns the *how* of iterating. Open/Closed: new arr
    * variants can reuse this without modifying the base.
+   *
+   * Children are fetched in parallel batches of NESTED_CONCURRENCY to cut
+   * wall-time on large libraries (hundreds of artists) without bombarding
+   * the *arr instance with one request per parent simultaneously. Parent
+   * order is preserved in the output.
    */
   protected async fetchNested<Parent, Child>(args: {
     parentPath: string;
@@ -43,14 +53,20 @@ export abstract class ArrClient {
     const parents = await this.getJson<Parent[]>(args.parentPath);
     if (!parents) return [];
     const out: SearchItemDerived[] = [];
-    for (const parent of parents) {
-      const children = await this.getJson<Child[]>(
-        args.childPath,
-        args.childParams(parent),
+    for (let i = 0; i < parents.length; i += NESTED_CONCURRENCY) {
+      const batch = parents.slice(i, i + NESTED_CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(async (parent) => {
+          const children = await this.getJson<Child[]>(
+            args.childPath,
+            args.childParams(parent),
+          );
+          if (!children) return [];
+          return children.map((child) => args.map(parent, child));
+        }),
       );
-      if (!children) continue;
-      for (const child of children) {
-        out.push(args.map(parent, child));
+      for (const items of batchResults) {
+        for (const item of items) out.push(item);
       }
     }
     return out;

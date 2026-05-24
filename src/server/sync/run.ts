@@ -186,6 +186,13 @@ interface PersistChangeStats {
 // emit thousands of "title synced" lines). Aggregate counts always log.
 const PER_ITEM_LOG_CAP = 50;
 
+// Batch size for upsert transactions in persistAndReindex. Splitting a large
+// sync into many short transactions keeps the SQLite writer lock available
+// for other concurrent instance syncs, instead of holding it for the entire
+// 5k-item library at once. Small chunks also give the sync more save points:
+// a mid-sync crash loses at most ~50 items of progress, not 200.
+const PERSIST_CHUNK_SIZE = 50;
+
 // Replaces the on-disk SearchItem rows for one instance with the freshly
 // fetched items, then rebuilds the in-memory index from the new rows.
 async function persistAndReindex(
@@ -229,84 +236,88 @@ async function persistAndReindex(
     }
   };
 
-  await prisma.$transaction(async (tx) => {
-    for (const item of items) {
-      seenExternalIds.add(item.externalId);
-      const data = {
-        arrInstanceId: instanceId,
-        arrId: item.arrId,
-        externalId: item.externalId,
-        title: item.title,
-        expectedTitle: item.expectedTitle,
-        expectedAuthor: item.expectedAuthor ?? null,
-        germanTitle: item.germanTitle ?? null,
-        mediaType: item.mediaType,
-        year: item.year ?? null,
-        titleSearchVariations: JSON.stringify(item.titleSearchVariations),
-        titleMatchVariations: JSON.stringify(item.titleMatchVariations),
-        authorMatchVariations: JSON.stringify(item.authorMatchVariations),
-        aliases: item.aliases ? JSON.stringify(item.aliases) : null,
-      };
-      const prior = existingMap.get(item.externalId);
-      if (prior) {
-        await tx.searchItem.update({ where: { id: prior.id }, data });
-        stats.updated += 1;
-        const germanChanged =
-          (prior.germanTitle ?? null) !== (item.germanTitle ?? null);
-        const expectedChanged = prior.expectedTitle !== item.expectedTitle;
-        if (germanChanged) stats.germanTitleChanged += 1;
-        if (expectedChanged) stats.expectedTitleChanged += 1;
-        if (germanChanged || expectedChanged) {
+  for (let i = 0; i < items.length; i += PERSIST_CHUNK_SIZE) {
+    const chunk = items.slice(i, i + PERSIST_CHUNK_SIZE);
+    await prisma.$transaction(async (tx) => {
+      for (const item of chunk) {
+        seenExternalIds.add(item.externalId);
+        const data = {
+          arrInstanceId: instanceId,
+          arrId: item.arrId,
+          externalId: item.externalId,
+          title: item.title,
+          expectedTitle: item.expectedTitle,
+          expectedAuthor: item.expectedAuthor ?? null,
+          germanTitle: item.germanTitle ?? null,
+          mediaType: item.mediaType,
+          year: item.year ?? null,
+          titleSearchVariations: JSON.stringify(item.titleSearchVariations),
+          titleMatchVariations: JSON.stringify(item.titleMatchVariations),
+          authorMatchVariations: JSON.stringify(item.authorMatchVariations),
+          aliases: item.aliases ? JSON.stringify(item.aliases) : null,
+        };
+        const prior = existingMap.get(item.externalId);
+        if (prior) {
+          await tx.searchItem.update({ where: { id: prior.id }, data });
+          stats.updated += 1;
+          const germanChanged =
+            (prior.germanTitle ?? null) !== (item.germanTitle ?? null);
+          const expectedChanged = prior.expectedTitle !== item.expectedTitle;
+          if (germanChanged) stats.germanTitleChanged += 1;
+          if (expectedChanged) stats.expectedTitleChanged += 1;
+          if (germanChanged || expectedChanged) {
+            logChange(
+              {
+                event: "title-changed",
+                mediaType: item.mediaType,
+                externalId: item.externalId,
+                title: item.title,
+                previousGermanTitle: prior.germanTitle,
+                germanTitle: item.germanTitle,
+                previousExpectedTitle: prior.expectedTitle,
+                expectedTitle: item.expectedTitle,
+                year: item.year ?? null,
+              },
+              "sync: title updated",
+            );
+          }
+        } else {
+          await tx.searchItem.create({ data });
+          stats.created += 1;
           logChange(
             {
-              event: "title-changed",
+              event: "title-added",
               mediaType: item.mediaType,
               externalId: item.externalId,
               title: item.title,
-              previousGermanTitle: prior.germanTitle,
-              germanTitle: item.germanTitle,
-              previousExpectedTitle: prior.expectedTitle,
               expectedTitle: item.expectedTitle,
+              germanTitle: item.germanTitle,
               year: item.year ?? null,
             },
-            "sync: title updated",
+            "sync: title added",
           );
         }
-      } else {
-        await tx.searchItem.create({ data });
-        stats.created += 1;
-        logChange(
-          {
-            event: "title-added",
-            mediaType: item.mediaType,
-            externalId: item.externalId,
-            title: item.title,
-            expectedTitle: item.expectedTitle,
-            germanTitle: item.germanTitle,
-            year: item.year ?? null,
-          },
-          "sync: title added",
-        );
       }
+    });
+  }
+
+  const stale = existing.filter((e) => !seenExternalIds.has(e.externalId));
+  if (stale.length > 0) {
+    stats.removed = stale.length;
+    for (const s of stale) {
+      logChange(
+        {
+          event: "title-removed",
+          externalId: s.externalId,
+          title: s.title,
+        },
+        "sync: title removed",
+      );
     }
-    const stale = existing.filter((e) => !seenExternalIds.has(e.externalId));
-    if (stale.length > 0) {
-      stats.removed = stale.length;
-      for (const s of stale) {
-        logChange(
-          {
-            event: "title-removed",
-            externalId: s.externalId,
-            title: s.title,
-          },
-          "sync: title removed",
-        );
-      }
-      await tx.searchItem.deleteMany({
-        where: { id: { in: stale.map((s) => s.id) } },
-      });
-    }
-  });
+    await prisma.searchItem.deleteMany({
+      where: { id: { in: stale.map((s) => s.id) } },
+    });
+  }
 
   state.removeItemsForInstance(instanceId);
   const fresh = await prisma.searchItem.findMany({
@@ -478,19 +489,21 @@ export async function runSync(opts: RunSyncOptions): Promise<SyncResult> {
       },
       "sync aborted: TMDB key missing for non-German language plugins",
     );
-    const perInstance: PerInstanceResult[] = [];
-    for (const prepared of preparedRuns) {
-      perInstance.push(await markRunFailed(prepared, preflightError));
-    }
+    const perInstance = await Promise.all(
+      preparedRuns.map((prepared) => markRunFailed(prepared, preflightError)),
+    );
     return { totalItems: 0, perInstance };
   }
 
-  const perInstance: PerInstanceResult[] = [];
-  let total = 0;
-  for (const prepared of preparedRuns) {
-    const result = await syncOneInstance(prepared, state, logger);
-    perInstance.push(result);
-    total += result.count;
-  }
+  // Instances are independent (different arrInstanceId, separate SyncRun rows,
+  // separate HTTP fetches). Running them in parallel turns wall-time from
+  // sum-of-instances into max-of-instances. The SQLite writer lock still
+  // serializes the actual upsert transactions, but chunked persistAndReindex
+  // releases the lock between batches so the instances interleave instead of
+  // fully serializing.
+  const perInstance = await Promise.all(
+    preparedRuns.map((prepared) => syncOneInstance(prepared, state, logger)),
+  );
+  const total = perInstance.reduce((sum, r) => sum + r.count, 0);
   return { totalItems: total, perInstance };
 }

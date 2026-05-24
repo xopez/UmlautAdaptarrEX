@@ -7,6 +7,14 @@ const SUCCESS_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const FIRST_FAIL_INTERVAL_MS = 2 * 60 * 1000;
 const REPEATED_FAIL_INTERVAL_MS = 60 * 60 * 1000;
 
+// Wall-time watchdog: if the running flag stays true beyond this window,
+// something in executePrepared has hung (a stuck HTTP request, deadlocked
+// Prisma transaction, …). The watchdog resets the flag and logs so the
+// next tick can run; the orphaned promise keeps going but its own writes
+// are idempotent against the SyncRun row, so a late completion just
+// updates the row to "succeeded"/"errored" with no follow-on damage.
+const RUNNING_FLAG_WATCHDOG_MS = 6 * 60 * 60 * 1000;
+
 interface SchedulerOptions {
     logger: AppLogger;
 }
@@ -19,10 +27,33 @@ type RunNowOutcome =
 
 export class SyncScheduler {
     private timer: NodeJS.Timeout | null = null;
+    private watchdog: NodeJS.Timeout | null = null;
     private failures = 0;
     private running = false;
 
     constructor(private readonly opts: SchedulerOptions) {
+    }
+
+    private armWatchdog(): void {
+        if (this.watchdog) clearTimeout(this.watchdog);
+        this.watchdog = setTimeout(() => {
+            if (this.running) {
+                this.opts.logger.error(
+                    { watchdogMs: RUNNING_FLAG_WATCHDOG_MS },
+                    "sync watchdog: running flag stuck for >6h; resetting so the next tick can proceed",
+                );
+                this.running = false;
+            }
+        }, RUNNING_FLAG_WATCHDOG_MS);
+        // Don't keep the event loop alive solely for the watchdog.
+        this.watchdog.unref?.();
+    }
+
+    private disarmWatchdog(): void {
+        if (this.watchdog) {
+            clearTimeout(this.watchdog);
+            this.watchdog = null;
+        }
     }
 
     start(): void {
@@ -32,6 +63,7 @@ export class SyncScheduler {
     stop(): void {
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
+        this.disarmWatchdog();
     }
 
     // Creates SyncRun rows synchronously (so the UI has poll targets immediately)
@@ -66,12 +98,14 @@ export class SyncScheduler {
         );
 
         this.running = true;
+        this.armWatchdog();
         void this.executePrepared(prepared)
             .catch((err) =>
                 this.opts.logger.error({err}, "background sync crashed unexpectedly"),
             )
             .finally(() => {
                 this.running = false;
+                this.disarmWatchdog();
             });
 
         return {
@@ -118,10 +152,12 @@ export class SyncScheduler {
         );
 
         this.running = true;
+        this.armWatchdog();
         try {
             await this.executePrepared(prepared);
         } finally {
             this.running = false;
+            this.disarmWatchdog();
         }
     }
 
