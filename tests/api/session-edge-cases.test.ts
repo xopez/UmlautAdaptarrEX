@@ -36,47 +36,19 @@ beforeEach(async () => {
   await getAppState().reloadSettings();
 });
 
-describe("concurrent sessions", () => {
-  it("logging in twice yields two independent sessions, both valid", async () => {
+describe("session rotation on login", () => {
+  it("a second login invalidates the prior session (single-session policy)", async () => {
+    // rotateSessionForUser drops all existing sessions for the user on every
+    // successful login: a previously-issued ID (including one an attacker may
+    // have tricked the user into accepting before login) is invalid the
+    // moment auth succeeds.
     await seedAdminUser();
     const sessionA = await login(app);
     const sessionB = await login(app);
 
     expect(sessionA.sessionCookie).not.toBe(sessionB.sessionCookie);
 
-    // Both work on /me independently.
-    const meA = await app.inject({
-      method: "GET",
-      url: "/api/auth/me",
-      ...sessionCookieOnly(sessionA),
-    });
-    expect(meA.statusCode).toBe(200);
-
-    const meB = await app.inject({
-      method: "GET",
-      url: "/api/auth/me",
-      ...sessionCookieOnly(sessionB),
-    });
-    expect(meB.statusCode).toBe(200);
-
-    // Server-side: two Session rows persisted.
-    const { prisma } = await import("@/lib/db");
-    expect(await prisma.session.count()).toBe(2);
-  });
-
-  it("logout of session A leaves session B usable", async () => {
-    await seedAdminUser();
-    const sessionA = await login(app);
-    const sessionB = await login(app);
-
-    const logout = await app.inject({
-      method: "POST",
-      url: "/api/auth/logout",
-      ...authCookies(sessionA),
-    });
-    expect(logout.statusCode).toBe(200);
-
-    // A is dead.
+    // Session A is dead after B logged in.
     const meA = await app.inject({
       method: "GET",
       url: "/api/auth/me",
@@ -84,13 +56,46 @@ describe("concurrent sessions", () => {
     });
     expect(meA.statusCode).toBe(401);
 
-    // B still works.
+    // Session B works.
     const meB = await app.inject({
       method: "GET",
       url: "/api/auth/me",
       ...sessionCookieOnly(sessionB),
     });
     expect(meB.statusCode).toBe(200);
+
+    // Server-side: only the most recent session row survives.
+    const { prisma } = await import("@/lib/db");
+    expect(await prisma.session.count()).toBe(1);
+  });
+
+  it("logout of the current session invalidates it without leaving prior sessions usable", async () => {
+    await seedAdminUser();
+    const sessionA = await login(app);
+    // Logging in again rotates: A is already dead, B is the live session.
+    const sessionB = await login(app);
+
+    const logout = await app.inject({
+      method: "POST",
+      url: "/api/auth/logout",
+      ...authCookies(sessionB),
+    });
+    expect(logout.statusCode).toBe(200);
+
+    // Both sessions are dead now.
+    const meA = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+      ...sessionCookieOnly(sessionA),
+    });
+    expect(meA.statusCode).toBe(401);
+
+    const meB = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+      ...sessionCookieOnly(sessionB),
+    });
+    expect(meB.statusCode).toBe(401);
   });
 });
 

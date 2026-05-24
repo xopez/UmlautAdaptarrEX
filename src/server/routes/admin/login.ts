@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "@/lib/db";
-import { verifyPassword } from "@/lib/auth/password";
+import { dummyVerifyPassword, verifyPassword } from "@/lib/auth/password";
 import {
-  createSession,
   getSession,
   revokeSession,
+  rotateSessionForUser,
   SESSION_COOKIE,
   SESSION_TTL_MS,
 } from "@/lib/auth/session";
@@ -47,6 +47,11 @@ export async function loginRoutes(app: FastifyInstance): Promise<void> {
         where: { username: data.username },
       });
       if (!user) {
+        // Burn an argon2.verify against a fixed dummy hash so the wall-clock
+        // matches the valid-user path. Without this an attacker can probe
+        // for existing usernames by measuring response time (real verify
+        // ~50 ms vs. instant 401).
+        await dummyVerifyPassword(data.password);
         req.log.warn(
           {
             username: data.username,
@@ -67,7 +72,10 @@ export async function loginRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(401).send({ error: "invalid-credentials" });
       }
 
-      const session = await createSession(user.id);
+      // Rotate the session ID: drop any prior sessions for this user and
+      // mint a fresh ID. Defeats session-fixation attacks where a leaked
+      // pre-auth cookie could otherwise stay valid for the full TTL.
+      const session = await rotateSessionForUser(user.id);
       reply.setCookie(
         SESSION_COOKIE,
         session.id,

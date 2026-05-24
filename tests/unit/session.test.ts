@@ -32,8 +32,11 @@ afterEach(() => {
 });
 
 describe("SESSION_TTL_MS", () => {
-  it("is 365 days during tests since NODE_ENV is not production", () => {
-    expect(SESSION_TTL_MS).toBe(365 * 24 * 60 * 60 * 1000);
+  // vitest sets NODE_ENV=test by default; we whitelist only "development"
+  // for the long TTL so anything else (including production AND unset)
+  // gets the strict 14-day window.
+  it("is 14 days during tests since NODE_ENV is not 'development'", () => {
+    expect(SESSION_TTL_MS).toBe(14 * 24 * 60 * 60 * 1000);
   });
 
   it("collapses to 14 days when NODE_ENV is production", async () => {
@@ -42,6 +45,28 @@ describe("SESSION_TTL_MS", () => {
     try {
       const mod = await import("@/lib/auth/session");
       expect(mod.SESSION_TTL_MS).toBe(14 * 24 * 60 * 60 * 1000);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("stays at 14 days when NODE_ENV is unset (defense-in-depth)", async () => {
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", "");
+    try {
+      const mod = await import("@/lib/auth/session");
+      expect(mod.SESSION_TTL_MS).toBe(14 * 24 * 60 * 60 * 1000);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("expands to 365 days only when NODE_ENV is explicitly 'development'", async () => {
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", "development");
+    try {
+      const mod = await import("@/lib/auth/session");
+      expect(mod.SESSION_TTL_MS).toBe(365 * 24 * 60 * 60 * 1000);
     } finally {
       vi.unstubAllEnvs();
     }

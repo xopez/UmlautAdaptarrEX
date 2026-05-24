@@ -27,12 +27,29 @@ let secret: Buffer | null = null;
 // created with a random `appApiKey` (not `""`) so the legacy-route
 // "empty key = open access" branch is not silently triggered between boot
 // and the user finishing the setup wizard.
+// Minimum byte length for an externally-supplied CSRF secret. 32 bytes is
+// the floor recommended for HMAC-SHA256 keys; anything shorter weakens
+// the signed-cookie HMAC enough that we'd rather ignore the env var and
+// fall back to the auto-generated DB-stored secret.
+const MIN_CSRF_SECRET_BYTES = 32;
+
 export async function ensureCsrfSecret(): Promise<void> {
   if (secret) return;
   const env = process.env.CSRF_SECRET;
   if (env) {
-    secret = Buffer.from(env, "utf8");
-    return;
+    const envBuf = Buffer.from(env, "utf8");
+    if (envBuf.length < MIN_CSRF_SECRET_BYTES) {
+      // Don't crash here — that would brick boot for anyone with a misset
+      // env var. But we WARN loudly and refuse the value, so the
+      // operator notices on next deploy and the secret-quality guarantee
+      // isn't silently downgraded.
+      console.warn(
+        `[csrf] CSRF_SECRET env var is ${envBuf.length} bytes — must be at least ${MIN_CSRF_SECRET_BYTES} bytes; ignoring and falling back to the DB-stored secret.`,
+      );
+    } else {
+      secret = envBuf;
+      return;
+    }
   }
   const existing = await prisma.setting.findUnique({
     where: { id: 1 },

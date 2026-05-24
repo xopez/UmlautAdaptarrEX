@@ -28,15 +28,37 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+// Long enough to clear the MIN_CSRF_SECRET_BYTES (32) guard added for
+// BUG-013. The full string is exactly 32 ASCII bytes.
+const LONG_ENV_SECRET = "env-provided-secret-padded-to-32";
+
 describe("ensureCsrfSecret", () => {
   it("uses CSRF_SECRET env override and skips the database", async () => {
-    vi.stubEnv("CSRF_SECRET", "env-provided-secret");
+    vi.stubEnv("CSRF_SECRET", LONG_ENV_SECRET);
 
     await ensureCsrfSecret();
 
-    expect(getCsrfSecret().toString("utf8")).toBe("env-provided-secret");
+    expect(getCsrfSecret().toString("utf8")).toBe(LONG_ENV_SECRET);
     expect(mockSetting.findUnique).not.toHaveBeenCalled();
     expect(mockSetting.upsert).not.toHaveBeenCalled();
+  });
+
+  it("ignores a CSRF_SECRET env value shorter than 32 bytes and falls back to DB", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      vi.stubEnv("CSRF_SECRET", "too-short");
+      const stored = Buffer.from(
+        "fallback-secret-bytes-padded-to-32",
+      ).toString("base64");
+      mockSetting.findUnique.mockResolvedValueOnce({ csrfSecret: stored });
+      await ensureCsrfSecret();
+      expect(getCsrfSecret().toString("utf8")).toBe(
+        "fallback-secret-bytes-padded-to-32",
+      );
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("decodes an existing base64 secret stored in the database", async () => {
@@ -90,13 +112,15 @@ describe("ensureCsrfSecret", () => {
   });
 
   it("returns early on subsequent calls without re-reading the env", async () => {
-    vi.stubEnv("CSRF_SECRET", "first");
+    const FIRST = "first-secret-padded-to-32-bytes!";
+    const SECOND = "second-secret-padded-to-32-bytes";
+    vi.stubEnv("CSRF_SECRET", FIRST);
     await ensureCsrfSecret();
 
-    vi.stubEnv("CSRF_SECRET", "second");
+    vi.stubEnv("CSRF_SECRET", SECOND);
     await ensureCsrfSecret();
 
-    expect(getCsrfSecret().toString("utf8")).toBe("first");
+    expect(getCsrfSecret().toString("utf8")).toBe(FIRST);
   });
 });
 

@@ -45,15 +45,27 @@ export async function requireAuth(
   req.session = session;
 
   if (!SAFE_METHODS.has(req.method)) {
-    let passed = false;
-    req.server.csrfProtection(req, reply, () => {
-      passed = true;
-    });
-    if (!passed) {
+    // `@fastify/csrf-protection` invokes its hook with the standard
+    // (err, _req, _reply, next) signature. Wrap it in a promise so we
+    // observe the actual outcome instead of inspecting a sync flag — the
+    // plugin can resolve asynchronously (and a future upgrade might also
+    // make the validate path async). The global error handler turns the
+    // FST_CSRF_* codes into `{error: "csrf-invalid"}`.
+    try {
+      await new Promise<void>((resolve, reject) => {
+        req.server.csrfProtection(req, reply, (err?: Error | null) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    } catch (err) {
       req.log.warn(
-        { url: req.url, method: req.method, ip: req.ip },
+        { url: req.url, method: req.method, ip: req.ip, err },
         "auth rejected: invalid CSRF token",
       );
+      if (!reply.sent) {
+        reply.code(403).send({ error: "csrf-invalid" });
+      }
       return;
     }
   }

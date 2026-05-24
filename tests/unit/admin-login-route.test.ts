@@ -17,17 +17,20 @@ vi.mock("@/lib/db", () => ({
   prisma: { adminUser: mockAdminUser },
 }));
 
-const { mockVerify } = vi.hoisted(() => ({
+const { mockVerify, mockDummyVerify } = vi.hoisted(() => ({
   mockVerify: vi.fn(),
+  mockDummyVerify: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/password", () => ({
   verifyPassword: mockVerify,
+  dummyVerifyPassword: mockDummyVerify,
 }));
 
 const { mockSession } = vi.hoisted(() => ({
   mockSession: {
     create: vi.fn(),
+    rotate: vi.fn(),
     get: vi.fn(),
     revoke: vi.fn(),
   },
@@ -38,6 +41,7 @@ vi.mock("@/lib/auth/session", async (importOriginal) => {
   return {
     ...orig,
     createSession: mockSession.create,
+    rotateSessionForUser: mockSession.rotate,
     getSession: mockSession.get,
     revokeSession: mockSession.revoke,
   };
@@ -50,7 +54,9 @@ let app: FastifyInstance;
 beforeEach(async () => {
   mockAdminUser.findUnique.mockReset();
   mockVerify.mockReset();
+  mockDummyVerify.mockReset();
   mockSession.create.mockReset();
+  mockSession.rotate.mockReset();
   mockSession.get.mockReset();
   mockSession.revoke.mockReset();
 
@@ -80,6 +86,7 @@ describe("POST /api/auth/login", () => {
 
   it("returns 401 invalid-credentials when the user is unknown", async () => {
     mockAdminUser.findUnique.mockResolvedValueOnce(null);
+    mockDummyVerify.mockResolvedValueOnce(undefined);
     const r = await app.inject({
       method: "POST",
       url: "/api/auth/login",
@@ -87,6 +94,9 @@ describe("POST /api/auth/login", () => {
     });
     expect(r.statusCode).toBe(401);
     expect(r.json()).toEqual({ error: "invalid-credentials" });
+    // BUG-012: dummy verify must run even when the user does not exist,
+    // otherwise the timing channel leaks which usernames are registered.
+    expect(mockDummyVerify).toHaveBeenCalledWith("irrelevant");
   });
 
   it("returns 401 invalid-credentials when the password verify fails", async () => {
@@ -111,7 +121,7 @@ describe("POST /api/auth/login", () => {
       passwordHash: "$argon2id$abc",
     });
     mockVerify.mockResolvedValueOnce(true);
-    mockSession.create.mockResolvedValueOnce({
+    mockSession.rotate.mockResolvedValueOnce({
       id: "session-id-12345",
       expiresAt: new Date(Date.now() + 60_000),
     });
@@ -126,6 +136,9 @@ describe("POST /api/auth/login", () => {
     expect(body.ok).toBe(true);
     expect(typeof body.csrf).toBe("string");
     expect(body.csrf.length).toBeGreaterThan(0);
+    // BUG-006: login must mint via rotateSessionForUser so any pre-auth
+    // ID becomes invalid.
+    expect(mockSession.rotate).toHaveBeenCalledWith("u1");
 
     const setCookies = r.headers["set-cookie"];
     const cookies = Array.isArray(setCookies) ? setCookies : [setCookies];
