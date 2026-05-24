@@ -14,7 +14,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 # `postinstall` runs `prisma generate`, which needs the schema + config — copy
 # them in alongside the manifests so the install step doesn't fail.
-COPY package.json pnpm-lock.yaml prisma.config.ts ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml prisma.config.ts ./
 COPY prisma ./prisma
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
