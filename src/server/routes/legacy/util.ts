@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { prisma } from "@/lib/db";
 import { getAppState } from "@/server/state";
 import { isPrivateHost } from "@/server/security/ssrf";
+import { redactApiKey } from "@/lib/log-redact";
 
 export interface LegacyContext {
   apiKey: string;
@@ -99,7 +100,10 @@ export function assertLegacyContext(
       {
         route,
         reason: parsed.error,
-        url: req.url,
+        // Mask the apiKey path segment + any apikey query param before
+        // logging, otherwise the user's appApiKey lands in the log on every
+        // malformed request.
+        url: redactApiKey(req.url),
         ip: req.ip,
         ua: req.headers["user-agent"] ?? null,
       },

@@ -4,6 +4,7 @@ import { request as undiciRequest } from "undici";
 import type { AppLogger } from "@/server/logging/logger";
 import type { AppState } from "@/server/state";
 import { isPrivateHost } from "@/server/security/ssrf";
+import { redactApiKey } from "@/lib/log-redact";
 
 const KNOWN_HTTPS_HOSTS = new Set(["prowlarr.servarr.com"]);
 
@@ -330,7 +331,10 @@ export class HttpProxyServer {
       const [, urlStr] = firstLine.split(" ");
       if (!urlStr) {
         this.opts.logger.warn(
-          { firstLine, remoteAddress: socket.remoteAddress },
+          {
+            firstLine: redactApiKey(firstLine),
+            remoteAddress: socket.remoteAddress,
+          },
           "http-proxy 400: missing URL in request line",
         );
         socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
@@ -399,7 +403,7 @@ export class HttpProxyServer {
       this.opts.logger.error(
         {
           err,
-          firstLine,
+          firstLine: redactApiKey(firstLine),
           host: url?.host ?? null,
           path: url?.pathname ?? null,
           durationMs: Math.round(durationMs),
