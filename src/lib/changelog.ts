@@ -74,6 +74,10 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: "Upgraded build tooling (pnpm 11.3.0, ESLint 10, Vitest 4.1.7, Playwright 1.60, tsx 4.22.3) and pinned the React version in the ESLint config.",
       },
       {
+        type: "improvement",
+        text: "Docker image rebuilds faster thanks to a reworked Dockerfile with better layer caching and refreshed base image references. The build context also includes the pnpm workspace file so the install step no longer fails inside the image.",
+      },
+      {
         type: "fix",
         text: "Added explicit Buffer type annotations to socket data handlers in the TCP proxy tests so the suite passes under stricter TypeScript settings.",
       },

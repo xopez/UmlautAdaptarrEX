@@ -1,17 +1,24 @@
 # syntax=docker/dockerfile:1.7
-FROM node:26-bookworm-slim AS base
+
+# ── Minimal runtime base ─────────────────────────────────────────────────────
+FROM node:26-bookworm-slim AS base-runtime
 WORKDIR /app
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl gosu wget ca-certificates \
-  && rm -rf /var/lib/apt/lists/* \
-  && npm install -g pnpm@11.3.0 \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends openssl gosu wget ca-certificates
+
+# ── Builder base ─────────────────────────────────────────────────────────────
+FROM base-runtime AS base-builder
+RUN npm install -g pnpm@11.3.0 \
   && pnpm config set store-dir /pnpm/store
 
 # ── Full install (incl. devDeps for next build / tsup / prisma generate) ─────
-FROM base AS deps
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ \
-  && rm -rf /var/lib/apt/lists/*
+FROM base-builder AS deps
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++
 # `postinstall` runs `prisma generate`, which needs the schema + config — copy
 # them in alongside the manifests so the install step doesn't fail.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml prisma.config.ts ./
@@ -19,8 +26,7 @@ COPY prisma ./prisma
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 RUN apt-get purge -y python3 make g++ \
-  && apt-get autoremove -y \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get autoremove -y
 
 # ── Builder ──────────────────────────────────────────────────────────────────
 FROM deps AS builder
@@ -38,7 +44,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm prune --prod
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
-FROM base AS runtime
+FROM base-runtime AS runtime
 ARG APP_VERSION
 ENV APP_VERSION=$APP_VERSION
 ENV NODE_ENV=production
@@ -72,5 +78,5 @@ COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 EXPOSE 5005 5006 5007
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1:${PORT}/api/health" >/dev/null || exit 1
+  CMD wget --spider -q "http://127.0.0.1:${PORT}/api/health" || exit 1
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh", "node", "start.mjs"]

@@ -52,6 +52,7 @@
 - **ESLint:** Pinned the React version to `19` in `eslint.config.mjs` so `eslint-plugin-react` no longer has to auto-detect it.
 - **ESLint major bump:** `eslint` `9.39.4` → `10.4.0`.
 - **Node types:** `@types/node` `24.12.3` → `25.9.1` (major).
+- **Docker:** Reworked the Dockerfile for better layer caching (dependency install separated from source copy), refreshed base image references, and ensured `pnpm-workspace.yaml` is copied into the build context so `pnpm install` succeeds inside the image.
 
 ### Dependency Updates (minor/patch)
 
