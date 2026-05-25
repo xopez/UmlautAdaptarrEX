@@ -14,15 +14,21 @@ export type OperationMode = z.infer<typeof OperationModeSchema>;
 // TMDB provider on the next `reloadSettings`. Masked echoes (the bullet
 // string the GET returns to indicate "secret is stored") map to `undefined`
 // so a round-trip save leaves the stored secret intact.
-const optionalSecret = z
-  .preprocess((v) => {
-    if (typeof v !== "string") return v;
-    const trimmed = v.trim();
-    if (trimmed === "") return null;
-    if (isMaskedSecret(trimmed)) return undefined;
-    return v;
-  }, z.string().min(1).max(256).nullable())
-  .optional();
+//
+// The inner schema is `.nullable().optional()` rather than `.nullable()`
+// wrapped in an outer `.optional()`: the outer-optional form only short-
+// circuits when the *input* is undefined, but our preprocess produces
+// undefined for masked echoes, which then has to pass the inner schema.
+// Without `.optional()` on the inner, every PUT carrying a masked secret
+// 400s before reaching Prisma. That's how the "forced to re-enter both
+// keys" symptom on the Provider tab manifested.
+const optionalSecret = z.preprocess((v) => {
+  if (typeof v !== "string") return v;
+  const trimmed = v.trim();
+  if (trimmed === "") return null;
+  if (isMaskedSecret(trimmed)) return undefined;
+  return v;
+}, z.string().min(1).max(256).nullable().optional());
 
 // Empty password keeps the stored value (the UI shows the current one in
 // plain text — submitting the form unchanged shouldn't wipe it). Therefore

@@ -21,6 +21,14 @@ export type TmdbTestResult =
       detail?: string;
     };
 
+export type TvdbTestResult =
+  | { ok: true; sample: { id: number; title: string } }
+  | {
+      ok: false;
+      code: "missing" | "unauthorized" | "network" | "unknown";
+      detail?: string;
+    };
+
 export interface InstallProxyPreview {
   defaultHost: string;
   port: number;
@@ -43,6 +51,8 @@ export const AdminSchema = z.object({
     .regex(/^[a-zA-Z0-9_.-]+$/),
   password: z.string().min(8).max(256),
   tmdbApiKey: z.string().max(256).optional().nullable(),
+  tvdbApiKey: z.string().max(256).optional().nullable(),
+  tvdbPin: z.string().max(64).optional().nullable(),
 });
 export type AdminFormInput = z.infer<typeof AdminSchema>;
 

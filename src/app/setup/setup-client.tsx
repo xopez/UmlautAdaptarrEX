@@ -25,8 +25,11 @@ export function SetupClient({ initialStatus }: { initialStatus: SetupStatus }) {
             form={w.adminForm}
             tmdbTesting={w.tmdbTesting}
             tmdbTestResult={w.tmdbTestResult}
+            tvdbTesting={w.tvdbTesting}
+            tvdbTestResult={w.tvdbTestResult}
             onSubmit={w.onAdminSubmit}
             onTmdbTest={w.onTmdbTest}
+            onTvdbTest={w.onTvdbTest}
           />
         ) : null}
 

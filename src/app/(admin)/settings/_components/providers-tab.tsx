@@ -14,16 +14,29 @@ import { Label } from "@/components/ui/label";
 import { SaveBar } from "./save-bar";
 import { TmdbKeyField } from "./tmdb-key-field";
 import { TvdbKeyField } from "./tvdb-key-field";
-import type { SettingsForm } from "../_lib/settings-types";
+import type { SettingsForm, SettingsRow } from "../_lib/settings-types";
 
 interface ProvidersTabProps {
   form: SettingsForm;
+  data: SettingsRow | undefined;
   onSave: (data: SettingsUpdate) => void;
   saving: boolean;
 }
 
-export function ProvidersTab({ form, onSave, saving }: ProvidersTabProps) {
+export function ProvidersTab({
+  form,
+  data,
+  onSave,
+  saving,
+}: ProvidersTabProps) {
   const t = useTranslations("settings");
+  // `*Configured` flags come from the server (see admin/settings.ts GET) so
+  // the UI can render a "stored" state without ever holding the cleartext
+  // key. Default to false until the initial fetch resolves, otherwise we'd
+  // briefly show the editable input for already-configured keys.
+  const tmdbConfigured = data?.tmdbConfigured === true;
+  const tvdbConfigured = data?.tvdbConfigured === true;
+  const tvdbPinConfigured = data?.tvdbPinConfigured === true;
   return (
     <form
       id="providers-form"
@@ -42,7 +55,11 @@ export function ProvidersTab({ form, onSave, saving }: ProvidersTabProps) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="tmdbApiKey">{t("tmdbApiKey")}</Label>
-            <TmdbKeyField register={form.register} control={form.control} />
+            <TmdbKeyField
+              key={`tmdb-${tmdbConfigured}`}
+              form={form}
+              configured={tmdbConfigured}
+            />
             <p className="text-xs text-muted-foreground">
               {t("tmdbApiKeyHint")}{" "}
               <a
@@ -57,7 +74,12 @@ export function ProvidersTab({ form, onSave, saving }: ProvidersTabProps) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="tvdbApiKey">{t("tvdbApiKey")}</Label>
-            <TvdbKeyField register={form.register} control={form.control} />
+            <TvdbKeyField
+              key={`tvdb-${tvdbConfigured}-${tvdbPinConfigured}`}
+              form={form}
+              apiKeyConfigured={tvdbConfigured}
+              pinConfigured={tvdbPinConfigured}
+            />
             <p className="text-xs text-muted-foreground">
               {t("tvdbApiKeyHint")}{" "}
               <a

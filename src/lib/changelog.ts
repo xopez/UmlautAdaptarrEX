@@ -24,11 +24,15 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "1.1.0",
-    date: "2026-05-24",
+    date: "2026-05-25",
     title: "1.1.0: Hardening, sync performance & maintenance release",
     description:
-      "Security hardening for admin auth and secret handling, a major sync performance upgrade that parallelises instance syncs and title-provider lookups, more resilient title providers and sync scheduler, plus a dependency refresh.",
+      "Security hardening for admin auth and secret handling, a major sync performance upgrade that parallelises instance syncs and title-provider lookups, more resilient title providers and sync scheduler, TVDB credentials configurable in the UI, plus a dependency refresh.",
     items: [
+      {
+        type: "feature",
+        text: "TVDB API key and subscriber PIN can now be configured both in the setup wizard and on the admin settings page. Credentials are stored masked, can be tested live before saving, and use the same reusable secret-field UI as TMDB.",
+      },
       {
         type: "improvement",
         text: "Sync is now parallelised end-to-end: enabled Sonarr/Radarr/Lidarr/Readarr instances sync concurrently, Lidarr/Readarr fetch albums/books in parallel batches, and TMDB/TVDB bulk lookups run in batches at safe rate limits (TMDB 20 req/s, TVDB 10 req/s) instead of one request at a time. Large libraries sync several times faster.",

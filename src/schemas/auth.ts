@@ -12,6 +12,12 @@ export const SetupSchema = z.object({
     }),
   password: z.string().min(8).max(256),
   tmdbApiKey: z.string().max(256).optional().nullable(),
+  /** Optional TVDB v4 API key. Empty/omitted leaves the field unset; the
+   *  setup handler stores it on the singleton Setting row. */
+  tvdbApiKey: z.string().max(256).optional().nullable(),
+  /** Optional TVDB Subscriber-PIN. Only required for subscriber-only
+   *  endpoints; standard keys work without one. */
+  tvdbPin: z.string().max(64).optional().nullable(),
   /** How UmlautAdaptarr should run. Wizard default = "proxy" (recommended);
    *  migrations leave the DB default "both" in place. */
   operationMode: OperationModeSchema.optional(),

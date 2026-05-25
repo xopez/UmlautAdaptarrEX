@@ -183,6 +183,61 @@ describe("handleSetupSubmit", () => {
     expect(cookies.some((c) => String(c).includes("ua-csrf="))).toBe(true);
   });
 
+  it("persists TVDB key and PIN when supplied", async () => {
+    mockAdmin.findFirst.mockResolvedValueOnce(null);
+    mockHash.mockResolvedValueOnce("hash");
+    mockAdmin.create.mockResolvedValueOnce({ id: "u1", username: "admin" });
+    mockSetting.upsert.mockResolvedValueOnce({});
+    mockCreateSession.mockResolvedValueOnce({
+      id: "s1",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/setup",
+      payload: {
+        ...validBody,
+        tvdbApiKey: "tvdb-key-abc",
+        tvdbPin: "PIN123",
+      },
+    });
+
+    const args = mockSetting.upsert.mock.calls[0]?.[0] as {
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    };
+    expect(args.create.tvdbApiKey).toBe("tvdb-key-abc");
+    expect(args.create.tvdbPin).toBe("PIN123");
+    expect(args.update.tvdbApiKey).toBe("tvdb-key-abc");
+    expect(args.update.tvdbPin).toBe("PIN123");
+  });
+
+  it("stores null for TVDB fields when omitted", async () => {
+    // Setup wizard accepts TVDB as optional. Omitted/empty values must land
+    // on the Setting row as null so the provider chain falls back to TMDB.
+    mockAdmin.findFirst.mockResolvedValueOnce(null);
+    mockHash.mockResolvedValueOnce("hash");
+    mockAdmin.create.mockResolvedValueOnce({ id: "u1", username: "admin" });
+    mockSetting.upsert.mockResolvedValueOnce({});
+    mockCreateSession.mockResolvedValueOnce({
+      id: "s1",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/setup",
+      payload: validBody,
+    });
+
+    const args = mockSetting.upsert.mock.calls[0]?.[0] as {
+      create: Record<string, unknown>;
+    };
+    expect(args.create.tvdbApiKey).toBeNull();
+    expect(args.create.tvdbPin).toBeNull();
+  });
+
   it("persists plugin selections when supplied", async () => {
     mockAdmin.findFirst.mockResolvedValueOnce(null);
     mockHash.mockResolvedValueOnce("hash");

@@ -42,7 +42,7 @@ export function SettingsClient() {
       }),
     onSuccess: () => {
       toast.success(t("saved"));
-      qc.invalidateQueries({ queryKey: ["settings"] });
+      void qc.invalidateQueries({ queryKey: ["settings"] });
     },
     onError: () => toast.error(tCommon("error")),
   });
@@ -78,6 +78,7 @@ export function SettingsClient() {
         <TabsContent value="providers" className="space-y-6">
           <ProvidersTab
             form={form}
+            data={settings.data}
             onSave={onSave}
             saving={saveMut.isPending}
           />

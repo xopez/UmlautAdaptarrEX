@@ -3,24 +3,27 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useMutation } from "@tanstack/react-query";
-import type { Control, UseFormRegister } from "react-hook-form";
 import { useWatch } from "react-hook-form";
 import { CheckCircle2, Loader2 } from "lucide-react";
-import type { SettingsUpdate } from "@/schemas/settings";
 import { apiFetch } from "@/app/_lib/api-client";
 import { Button } from "@/components/ui/button";
 import { FieldHint } from "@/components/ui/field-hint";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RevealableInput } from "@/components/ui/revealable-input";
-import type { SettingsFormInput, TvdbTestResult } from "../_lib/settings-types";
+import { SecretField } from "@/components/ui/secret-field";
+import { isMaskedSecret } from "@/lib/secrets";
+import type { SettingsForm, TvdbTestResult } from "../_lib/settings-types";
 
 interface TvdbKeyFieldProps {
-  register: UseFormRegister<SettingsFormInput>;
-  control: Control<SettingsFormInput, unknown, SettingsUpdate>;
+  form: SettingsForm;
+  apiKeyConfigured: boolean;
+  pinConfigured: boolean;
 }
 
-export function TvdbKeyField({ register, control }: TvdbKeyFieldProps) {
+export function TvdbKeyField({
+  form,
+  apiKeyConfigured,
+  pinConfigured,
+}: TvdbKeyFieldProps) {
   const t = useTranslations("settings");
   const [result, setResult] = useState<TvdbTestResult | null>(null);
   const testMut = useMutation<
@@ -42,41 +45,59 @@ export function TvdbKeyField({ register, control }: TvdbKeyFieldProps) {
   });
 
   const currentKey = (
-    useWatch({ control, name: "tvdbApiKey" }) ?? ""
+    useWatch({ control: form.control, name: "tvdbApiKey" }) ?? ""
   ).toString();
-  const currentPin = (useWatch({ control, name: "tvdbPin" }) ?? "").toString();
+  const currentPin = (
+    useWatch({ control: form.control, name: "tvdbPin" }) ?? ""
+  ).toString();
+
+  // Masked sentinels mean "test the stored value"; the admin route falls back
+  // to the persisted key/pin when the body field is empty.
+  const onTest = () => {
+    const k = currentKey.trim();
+    const p = currentPin.trim();
+    testMut.mutate({
+      apiKey: isMaskedSecret(k) ? "" : k,
+      pin: isMaskedSecret(p) ? "" : p,
+    });
+  };
+
+  // RHF's UseFormReturn carries Zod-transformed output generics that don't
+  // structurally match SecretField's relaxed signature under
+  // exactOptionalPropertyTypes (validate is contravariant). SecretField only
+  // touches control/register/setValue/resetField, so the cast is safe here.
+  const formForSecret = form as unknown as Parameters<
+    typeof SecretField
+  >[0]["form"];
 
   return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <RevealableInput
-            id="tvdbApiKey"
-            autoComplete="off"
-            showLabel={t("showKey")}
-            hideLabel={t("hideKey")}
-            {...register("tvdbApiKey")}
-          />
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() =>
-            testMut.mutate({
-              apiKey: currentKey.trim(),
-              pin: currentPin.trim(),
-            })
-          }
-          disabled={testMut.isPending}
-        >
-          {testMut.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <CheckCircle2 className="h-4 w-4" />
-          )}
-          {t("tvdbTest")}
-        </Button>
-      </div>
+    <div className="space-y-3">
+      <SecretField
+        id="tvdbApiKey"
+        name="tvdbApiKey"
+        configured={apiKeyConfigured}
+        form={formForSecret}
+        showLabel={t("showKey")}
+        hideLabel={t("hideKey")}
+        storedLabel={t("secretStored")}
+        replaceLabel={t("secretReplace")}
+        cancelLabel={t("secretCancel")}
+        trailing={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onTest}
+            disabled={testMut.isPending}
+          >
+            {testMut.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            {t("tvdbTest")}
+          </Button>
+        }
+      />
       <div className="space-y-1">
         <div className="flex items-center gap-1.5">
           <Label htmlFor="tvdbPin" className="text-xs text-muted-foreground">
@@ -84,11 +105,17 @@ export function TvdbKeyField({ register, control }: TvdbKeyFieldProps) {
           </Label>
           <FieldHint text={t("tvdbPinHint")} />
         </div>
-        <Input
+        <SecretField
           id="tvdbPin"
-          autoComplete="off"
+          name="tvdbPin"
+          configured={pinConfigured}
+          form={formForSecret}
+          showLabel={t("showKey")}
+          hideLabel={t("hideKey")}
+          storedLabel={t("secretStored")}
+          replaceLabel={t("secretReplace")}
+          cancelLabel={t("secretCancel")}
           placeholder={t("tvdbPinPlaceholder")}
-          {...register("tvdbPin")}
         />
       </div>
       {result?.ok === true ? (
@@ -98,7 +125,7 @@ export function TvdbKeyField({ register, control }: TvdbKeyFieldProps) {
       ) : result?.ok === false ? (
         <p className="text-xs text-destructive">
           {t(`tvdbTestErr.${result.code}`)}
-          {result.detail ? ` — ${result.detail}` : ""}
+          {result.detail ? ` ${result.detail}` : ""}
         </p>
       ) : null}
     </div>

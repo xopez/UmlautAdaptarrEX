@@ -1,6 +1,10 @@
 # Changelog
 
-## 1.1.0 — 2026-05-24
+## 1.1.0 — 2026-05-25
+
+### Providers & Settings
+
+- **TVDB credentials:** API key and subscriber PIN can now be configured both in the setup wizard (admin step) and on the admin settings page. Credentials are stored masked, can be tested live before saving, and are surfaced via a new reusable `SecretField` component used for both TMDB and TVDB. The admin settings route persists TVDB keys alongside TMDB.
 
 ### Security & Auth Hardening
 
@@ -40,6 +44,7 @@
 - **Tests:** Explicitly typed the `chunk` parameter as `Buffer` in the socket `data` handlers of `tests/api/tcp-proxy.test.ts` and `tests/unit/disabled-proxy-stub.test.ts`.
 - **Tests (session rotation):** Rewrote `tests/api/session-edge-cases.test.ts` "concurrent sessions" block to assert the single-session policy added by the session-fixation fix above (a second login invalidates the prior session row; logout invalidates the current session).
 - **Tests (prowlarr admin preview):** Updated `tests/api/prowlarr-admin-flow.test.ts` to expect `__ua_key:` vault tokens in the admin `/preview` response, matching the vault-tokenisation hardening above.
+- **Tests (auth cookies):** Added `tests/unit/auth-cookies.test.ts` covering `Secure` cookie behaviour for HTTP vs. HTTPS requests and tidied the surrounding `_auth-cookies.ts` helper.
 
 ### Build & Tooling
 

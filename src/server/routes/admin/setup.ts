@@ -9,6 +9,7 @@ import {
 import { storeApiKey } from "@/server/prowlarr-key-vault";
 import { SetupSchema } from "@/schemas/auth";
 import { probeTmdbKey } from "@/providers/tmdb";
+import { probeTvdbKey } from "@/providers/tvdb";
 import { ProwlarrCredsSchema } from "@/schemas/prowlarr";
 import { TestConnectionSchema } from "@/schemas/instance";
 import {
@@ -199,6 +200,24 @@ async function postTestTmdbKey(
   return probeTmdbKey(data.apiKey);
 }
 
+async function postTestTvdbKey(
+  req: FastifyRequest,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const gate = await gateSetupOpen(reply, { code: 409 });
+  if (gate.gated) return;
+  const data = parseOrReply(
+    req.body ?? {},
+    z.object({
+      apiKey: z.string().trim().max(256),
+      pin: z.string().trim().max(64).optional(),
+    }),
+    reply,
+  );
+  if (!data) return;
+  return probeTvdbKey(data.apiKey, data.pin ?? null);
+}
+
 async function postProwlarrTest(
   req: FastifyRequest,
   reply: FastifyReply,
@@ -318,6 +337,7 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
   app.delete("/api/auth/prowlarr", rateLimited, deleteProwlarr);
   app.get("/api/auth/plugins", getPlugins);
   app.post("/api/auth/test-tmdb-key", rateLimited, postTestTmdbKey);
+  app.post("/api/auth/test-tvdb-key", rateLimited, postTestTvdbKey);
   app.post("/api/auth/prowlarr/test", rateLimited, postProwlarrTest);
   app.get(
     "/api/auth/prowlarr/install-proxy/preview",

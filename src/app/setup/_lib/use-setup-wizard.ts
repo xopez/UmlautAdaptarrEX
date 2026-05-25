@@ -32,6 +32,7 @@ import {
   type SetupStatus,
   type Step,
   type TmdbTestResult,
+  type TvdbTestResult,
   generatePassword,
 } from "./setup-wizard";
 
@@ -76,6 +77,11 @@ export function useSetupWizard(initialStatus: SetupStatus) {
   );
   const [tmdbTesting, setTmdbTesting] = useState(false);
 
+  const [tvdbTestResult, setTvdbTestResult] = useState<TvdbTestResult | null>(
+    null,
+  );
+  const [tvdbTesting, setTvdbTesting] = useState(false);
+
   const [previewLoading, setPreviewLoading] = useState(false);
   const [prowlarrTesting, setProwlarrTesting] = useState(false);
   const [prowlarrTestResult, setProwlarrTestResult] =
@@ -85,7 +91,13 @@ export function useSetupWizard(initialStatus: SetupStatus) {
 
   const adminForm = useForm<AdminFormInput>({
     resolver: zodResolver(AdminSchema),
-    defaultValues: { username: "", password: "", tmdbApiKey: "" },
+    defaultValues: {
+      username: "",
+      password: "",
+      tmdbApiKey: "",
+      tvdbApiKey: "",
+      tvdbPin: "",
+    },
   });
 
   const prowlarrForm = useForm<ProwlarrFormInput>({
@@ -137,6 +149,30 @@ export function useSetupWizard(initialStatus: SetupStatus) {
       });
     } finally {
       setTmdbTesting(false);
+    }
+  };
+
+  // TVDB key test, mirrors onTmdbTest. PIN is forwarded only when filled so
+  // the upstream login request stays minimal for non-subscriber accounts.
+  const onTvdbTest = async () => {
+    const key = (adminForm.getValues("tvdbApiKey") ?? "").trim();
+    const pin = (adminForm.getValues("tvdbPin") ?? "").trim();
+    setTvdbTesting(true);
+    setTvdbTestResult(null);
+    try {
+      const r = await apiFetch<TvdbTestResult>("/api/auth/test-tvdb-key", {
+        method: "POST",
+        body: JSON.stringify({ apiKey: key, ...(pin ? { pin } : {}) }),
+      });
+      setTvdbTestResult(r);
+    } catch (err) {
+      setTvdbTestResult({
+        ok: false,
+        code: "unknown",
+        detail: describeError(err),
+      });
+    } finally {
+      setTvdbTesting(false);
     }
   };
 
@@ -459,6 +495,8 @@ export function useSetupWizard(initialStatus: SetupStatus) {
         username: args.admin.username,
         password: args.admin.password,
         tmdbApiKey: args.admin.tmdbApiKey || null,
+        tvdbApiKey: args.admin.tvdbApiKey || null,
+        tvdbPin: args.admin.tvdbPin || null,
         prowlarrInstances: selections.length > 0 ? selections : undefined,
         proxyUsername: args.proxy.proxyUsername,
         proxyPassword: args.proxy.proxyPassword,
@@ -577,6 +615,10 @@ export function useSetupWizard(initialStatus: SetupStatus) {
     tmdbTesting,
     tmdbTestResult,
     onTmdbTest,
+    // tvdb
+    tvdbTesting,
+    tvdbTestResult,
+    onTvdbTest,
     // admin
     onAdminSubmit,
     // prowlarr connect

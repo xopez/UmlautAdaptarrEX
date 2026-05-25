@@ -131,6 +131,112 @@ describe("GET /api/admin/settings", () => {
   });
 });
 
+describe("PUT /api/admin/settings", () => {
+  it("updates a single secret without touching the others", async () => {
+    // Regression for the providers-tab UX rework: when the operator changes
+    // only the TVDB key, the PUT payload contains the new TVDB value plus
+    // the masked sentinel for TMDB. The route must persist the TVDB change
+    // and leave TMDB alone (zod preprocess + stripUndefined). Without this,
+    // the user is forced to re-enter every key on every save.
+    mockSetting.update.mockResolvedValueOnce({
+      id: 1,
+      appApiKey: "k",
+      proxyPort: 5006,
+      proxyUsername: "u",
+      proxyPassword: "p",
+      cacheDurationMinutes: 12,
+      titleApiHost: "https://x",
+      tmdbApiKey: "kept-tmdb",
+      tvdbApiKey: "new-tvdb",
+      tvdbPin: null,
+      userAgent: "UA",
+      setupComplete: true,
+      prowlarrHost: null,
+      prowlarrApiKey: null,
+      logRetentionDays: 3,
+      indexerRateLimitMs: 500,
+      indexerTimeoutSeconds: 60,
+      operationMode: "proxy",
+      blockPrivateInstanceHosts: false,
+      pausedUntil: null,
+    });
+
+    const r = await app.inject({
+      method: "PUT",
+      url: "/api/admin/settings",
+      payload: {
+        tmdbApiKey: "••••••••",
+        tvdbApiKey: "new-tvdb",
+        tvdbPin: "••••••••",
+      },
+    });
+    expect(r.statusCode).toBe(200);
+    const call = mockSetting.update.mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    // Load-bearing: the new TVDB key reaches Prisma while the masked TMDB
+    // and PIN sentinels never appear in the update payload, so the stored
+    // values for those secrets stay intact.
+    expect(call.data).toMatchObject({ tvdbApiKey: "new-tvdb" });
+    expect(call.data).not.toHaveProperty("tmdbApiKey");
+    expect(call.data).not.toHaveProperty("tvdbPin");
+
+    const body = r.json() as Record<string, unknown>;
+    // Server never echoes the cleartext — the new TVDB key comes back masked
+    // exactly like the untouched TMDB key, both flagged as configured.
+    expect(body.tmdbApiKey).toBe("••••••••");
+    expect(body.tvdbApiKey).toBe("••••••••");
+    expect(body.tmdbConfigured).toBe(true);
+    expect(body.tvdbConfigured).toBe(true);
+    expect(body.tvdbPinConfigured).toBe(false);
+  });
+
+  it("treats an empty string as 'clear the stored secret'", async () => {
+    // Mirror behaviour: the schema preprocess maps "" to null, which Prisma
+    // writes through. This is how the operator wipes a previously stored key.
+    mockSetting.update.mockResolvedValueOnce({
+      id: 1,
+      appApiKey: "k",
+      proxyPort: 5006,
+      proxyUsername: "u",
+      proxyPassword: "p",
+      cacheDurationMinutes: 12,
+      titleApiHost: "https://x",
+      tmdbApiKey: null,
+      tvdbApiKey: null,
+      tvdbPin: null,
+      userAgent: "UA",
+      setupComplete: true,
+      prowlarrHost: null,
+      prowlarrApiKey: null,
+      logRetentionDays: 3,
+      indexerRateLimitMs: 500,
+      indexerTimeoutSeconds: 60,
+      operationMode: "proxy",
+      blockPrivateInstanceHosts: false,
+      pausedUntil: null,
+    });
+
+    const r = await app.inject({
+      method: "PUT",
+      url: "/api/admin/settings",
+      payload: { tmdbApiKey: "" },
+    });
+    expect(r.statusCode).toBe(200);
+    const call = mockSetting.update.mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    // `tmdbApiKey: null` is the load-bearing assertion: empty input must
+    // wipe the stored secret. The route also writes back the other settings
+    // because `SettingsSchema.partial()` keeps `.default()` semantics on
+    // omitted fields. We only care that the secret reached Prisma as null
+    // and that the masked-only fields stayed out.
+    expect(call.data).toMatchObject({ tmdbApiKey: null });
+    expect(call.data).not.toHaveProperty("tvdbApiKey");
+    expect(call.data).not.toHaveProperty("tvdbPin");
+  });
+});
+
 describe("POST /api/admin/settings/test-tmdb-key", () => {
   it("forwards the supplied api key to probeTmdbKey", async () => {
     mockProbeTmdb.mockResolvedValueOnce({ ok: true });

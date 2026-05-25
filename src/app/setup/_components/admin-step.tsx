@@ -12,25 +12,36 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FieldHint } from "@/components/ui/field-hint";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RevealableInput } from "@/components/ui/revealable-input";
-import type { AdminFormInput, TmdbTestResult } from "../_lib/setup-wizard";
+import type {
+  AdminFormInput,
+  TmdbTestResult,
+  TvdbTestResult,
+} from "../_lib/setup-wizard";
 
 interface AdminStepProps {
   form: UseFormReturn<AdminFormInput>;
   tmdbTesting: boolean;
   tmdbTestResult: TmdbTestResult | null;
+  tvdbTesting: boolean;
+  tvdbTestResult: TvdbTestResult | null;
   onSubmit: FormEventHandler<HTMLFormElement>;
   onTmdbTest: () => void;
+  onTvdbTest: () => void;
 }
 
 export function AdminStep({
   form,
   tmdbTesting,
   tmdbTestResult,
+  tvdbTesting,
+  tvdbTestResult,
   onSubmit,
   onTmdbTest,
+  onTvdbTest,
 }: AdminStepProps) {
   const t = useTranslations("setup");
 
@@ -106,7 +117,73 @@ export function AdminStep({
             ) : tmdbTestResult?.ok === false ? (
               <p className="text-xs text-destructive">
                 {t(`tmdbTestErr.${tmdbTestResult.code}`)}
-                {tmdbTestResult.detail ? ` — ${tmdbTestResult.detail}` : ""}
+                {tmdbTestResult.detail ? ` ${tmdbTestResult.detail}` : ""}
+              </p>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tvdbApiKey">{t("tvdbApiKey")}</Label>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <RevealableInput
+                  id="tvdbApiKey"
+                  autoComplete="off"
+                  showLabel={t("showPassword")}
+                  hideLabel={t("hidePassword")}
+                  {...form.register("tvdbApiKey")}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onTvdbTest}
+                disabled={tvdbTesting}
+              >
+                {tvdbTesting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                {t("tvdbTest")}
+              </Button>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <Label
+                  htmlFor="tvdbPin"
+                  className="text-xs text-muted-foreground"
+                >
+                  {t("tvdbPin")}
+                </Label>
+                <FieldHint text={t("tvdbPinHint")} />
+              </div>
+              <Input
+                id="tvdbPin"
+                autoComplete="off"
+                placeholder={t("tvdbPinPlaceholder")}
+                {...form.register("tvdbPin")}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t("tvdbApiKeyHint")}{" "}
+              <a
+                href="https://thetvdb.com/api-information"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-primary underline-offset-2 hover:underline"
+              >
+                {t("tvdbApiKeyLink")}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </p>
+            {tvdbTestResult?.ok === true ? (
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                {t("tvdbTestOk", { title: tvdbTestResult.sample.title })}
+              </p>
+            ) : tvdbTestResult?.ok === false ? (
+              <p className="text-xs text-destructive">
+                {t(`tvdbTestErr.${tvdbTestResult.code}`)}
+                {tvdbTestResult.detail ? ` ${tvdbTestResult.detail}` : ""}
               </p>
             ) : null}
           </div>

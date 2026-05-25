@@ -15,6 +15,13 @@ export interface SettingsRow extends SettingsUpdate {
   appApiKey: string;
   proxyUsername: string;
   proxyPassword: string;
+  // Server-only "is the secret stored?" booleans. Returned alongside the
+  // masked key fields so the UI can render a stored-state badge without
+  // having access to the cleartext value.
+  tmdbConfigured: boolean;
+  tvdbConfigured: boolean;
+  tvdbPinConfigured: boolean;
+  prowlarrConfigured: boolean;
 }
 
 export interface ProwlarrConfigResponse {

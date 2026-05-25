@@ -64,6 +64,10 @@ async function persistInitialSettings(
   const fields = {
     appApiKey: apiKey,
     tmdbApiKey: data.tmdbApiKey ?? null,
+    // TVDB key + optional Pin land on the same singleton Setting row. Both
+    // stay null when omitted so the provider chain falls back to TMDB/pcjones.
+    tvdbApiKey: data.tvdbApiKey ?? null,
+    tvdbPin: data.tvdbPin ?? null,
     proxyUsername: data.proxyUsername,
     proxyPassword: data.proxyPassword,
     operationMode,
