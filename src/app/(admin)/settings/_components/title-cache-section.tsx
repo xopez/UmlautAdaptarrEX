@@ -7,13 +7,7 @@ import { toast } from "sonner";
 import { Database, Loader2, RefreshCcw, Trash2 } from "lucide-react";
 import { apiFetch } from "@/app/_lib/api-client";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TitleCacheStats } from "../_lib/settings-types";
@@ -42,7 +36,7 @@ export function TitleCacheSection() {
       }),
     onSuccess: (res) => {
       toast.success(t("cleared", { count: res.deleted }));
-      qc.invalidateQueries({ queryKey: ["title-cache"] });
+      void qc.invalidateQueries({ queryKey: ["title-cache"] });
       setConfirmOpen(false);
     },
     onError: () => toast.error(tCommon("error")),
@@ -65,7 +59,7 @@ export function TitleCacheSection() {
           }),
         );
       }
-      qc.invalidateQueries({ queryKey: ["title-cache"] });
+      void qc.invalidateQueries({ queryKey: ["title-cache"] });
     },
     onError: () => toast.error(tCommon("error")),
   });

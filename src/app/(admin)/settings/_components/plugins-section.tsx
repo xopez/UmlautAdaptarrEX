@@ -7,13 +7,7 @@ import { toast } from "sonner";
 import { Loader2, Plug, RefreshCw } from "lucide-react";
 import { ApiError, apiFetch } from "@/app/_lib/api-client";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PluginEntry, SettingsRow } from "../_lib/settings-types";
@@ -49,9 +43,7 @@ export function PluginsSection() {
     queryFn: () => apiFetch<SettingsRow>("/api/admin/settings"),
   });
   const hasTmdbKey = !!settings.data?.tmdbApiKey?.trim();
-  const nonDePluginsActive = (plugins.data ?? []).filter(
-    (p) => p.enabled && p.language !== "de",
-  );
+  const nonDePluginsActive = (plugins.data ?? []).filter((p) => p.enabled && p.language !== "de");
   const showTmdbWarning = !hasTmdbKey && nonDePluginsActive.length > 0;
 
   const toggleMut = useMutation({
@@ -61,7 +53,7 @@ export function PluginsSection() {
         { method: "PATCH", body: JSON.stringify({ enabled }) },
       ),
     onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ["plugins"] });
+      void qc.invalidateQueries({ queryKey: ["plugins"] });
       if (res.requiresResync) setRequiresResync(true);
     },
     onError: (err) => {
@@ -77,17 +69,14 @@ export function PluginsSection() {
   });
 
   const syncMut = useMutation({
-    mutationFn: () =>
-      apiFetch("/api/admin/sync", { method: "POST", body: "{}" }),
+    mutationFn: () => apiFetch("/api/admin/sync", { method: "POST", body: "{}" }),
     onSuccess: () => {
       setRequiresResync(false);
       toast.success(t("resyncStarted"));
     },
     onError: (err) => {
       const msg =
-        err instanceof ApiError && err.status === 409
-          ? t("resyncConflict")
-          : tCommon("error");
+        err instanceof ApiError && err.status === 409 ? t("resyncConflict") : tCommon("error");
       toast.error(msg);
     },
   });
@@ -145,11 +134,11 @@ export function PluginsSection() {
                     <p className="text-sm font-medium">
                       {tPlugins(p.nameKey.replace(/^plugins\./, ""))}
                     </p>
-                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
                       {p.language}
                     </span>
                     {p.defaultEnabled ? (
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
                         {t("defaultEnabledBadge")}
                       </span>
                     ) : null}
@@ -160,12 +149,9 @@ export function PluginsSection() {
                 </div>
                 <Switch
                   checked={p.enabled}
-                  onCheckedChange={(checked) =>
-                    toggleMut.mutate({ id: p.id, enabled: checked })
-                  }
+                  onCheckedChange={(checked) => toggleMut.mutate({ id: p.id, enabled: checked })}
                   disabled={
-                    toggleMut.isPending ||
-                    (!hasTmdbKey && p.language !== "de" && !p.enabled)
+                    toggleMut.isPending || (!hasTmdbKey && p.language !== "de" && !p.enabled)
                   }
                   aria-label={tPlugins(p.nameKey.replace(/^plugins\./, ""))}
                 />

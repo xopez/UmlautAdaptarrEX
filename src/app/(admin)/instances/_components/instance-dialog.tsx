@@ -53,46 +53,43 @@ interface InstanceDialogProps {
   onClose: () => void;
 }
 
-export function InstanceDialog({
-  open,
-  instance,
-  onClose,
-}: InstanceDialogProps) {
+export function InstanceDialog({ open, instance, onClose }: InstanceDialogProps) {
   const t = useTranslations("instances");
   const tCommon = useTranslations("common");
   const qc = useQueryClient();
 
   const isEdit = instance !== null;
   const apiKeyIsMasked = !!instance && isMaskedSecret(instance.apiKey);
-  const { register, handleSubmit, control, formState, reset, setValue } =
-    useForm<ArrInstanceFormInput, unknown, ArrInstanceInput>({
-      resolver: zodResolver(ArrInstanceSchema),
-      defaultValues: instance
-        ? {
-            type: instance.type,
-            name: instance.name,
-            host: instance.host,
-            apiKey: apiKeyIsMasked ? "" : instance.apiKey,
-            enabled: instance.enabled,
-            providerOrder:
-              instance.providerOrder ?? DEFAULT_PROVIDER_ORDER[instance.type],
-            enableYearMatching: instance.enableYearMatching ?? true,
-            yearMatchingTolerance: instance.yearMatchingTolerance ?? 1,
-          }
-        : {
-            type: "sonarr",
-            enabled: true,
-            name: "",
-            host: "",
-            apiKey: "",
-            providerOrder: DEFAULT_PROVIDER_ORDER.sonarr,
-            enableYearMatching: true,
-            yearMatchingTolerance: 1,
-          },
-    });
+  const { register, handleSubmit, control, formState, reset, setValue } = useForm<
+    ArrInstanceFormInput,
+    unknown,
+    ArrInstanceInput
+  >({
+    resolver: zodResolver(ArrInstanceSchema),
+    defaultValues: instance
+      ? {
+          type: instance.type,
+          name: instance.name,
+          host: instance.host,
+          apiKey: apiKeyIsMasked ? "" : instance.apiKey,
+          enabled: instance.enabled,
+          providerOrder: instance.providerOrder ?? DEFAULT_PROVIDER_ORDER[instance.type],
+          enableYearMatching: instance.enableYearMatching ?? true,
+          yearMatchingTolerance: instance.yearMatchingTolerance ?? 1,
+        }
+      : {
+          type: "sonarr",
+          enabled: true,
+          name: "",
+          host: "",
+          apiKey: "",
+          providerOrder: DEFAULT_PROVIDER_ORDER.sonarr,
+          enableYearMatching: true,
+          yearMatchingTolerance: 1,
+        },
+  });
 
-  const watchedType = (useWatch({ control, name: "type" }) ??
-    "sonarr") as ArrType;
+  const watchedType = (useWatch({ control, name: "type" }) ?? "sonarr") as ArrType;
 
   // When the user changes the type we pull in the default for the new
   // type (e.g. Lidarr -> null, so the DnD field disappears). Edits to
@@ -114,7 +111,7 @@ export function InstanceDialog({
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["instances"] });
+      void qc.invalidateQueries({ queryKey: ["instances"] });
       reset();
       toast.success(t("created"));
       onClose();
@@ -129,7 +126,7 @@ export function InstanceDialog({
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["instances"] });
+      void qc.invalidateQueries({ queryKey: ["instances"] });
       toast.success(t("updated"));
       onClose();
     },
@@ -173,15 +170,9 @@ export function InstanceDialog({
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? t("editTitle") : t("addTitle")}</DialogTitle>
-          <DialogDescription>
-            {isEdit ? t("editSubtitle") : t("addSubtitle")}
-          </DialogDescription>
+          <DialogDescription>{isEdit ? t("editSubtitle") : t("addSubtitle")}</DialogDescription>
         </DialogHeader>
-        <form
-          id="instance-form"
-          onSubmit={handleSubmit(onSubmitForm)}
-          className="space-y-4"
-        >
+        <form id="instance-form" onSubmit={handleSubmit(onSubmitForm)} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="type">{t("type")}</Label>
@@ -195,11 +186,7 @@ export function InstanceDialog({
                     </SelectTrigger>
                     <SelectContent>
                       {ARR_TYPES.map((type) => (
-                        <SelectItem
-                          key={type}
-                          value={type}
-                          className="capitalize"
-                        >
+                        <SelectItem key={type} value={type} className="capitalize">
                           <span className="flex items-center gap-2">
                             <ArrIcon type={type} size={16} />
                             {type}
@@ -215,9 +202,7 @@ export function InstanceDialog({
               <Label htmlFor="name">{t("name")}</Label>
               <Input id="name" placeholder="Sonarr 4K" {...register("name")} />
               {formState.errors.name ? (
-                <p className="text-xs text-destructive">
-                  {formState.errors.name.message}
-                </p>
+                <p className="text-xs text-destructive">{formState.errors.name.message}</p>
               ) : null}
             </div>
           </div>
@@ -227,15 +212,9 @@ export function InstanceDialog({
               <Label htmlFor="host">{t("host")}</Label>
               <FieldHint text={t("hostHint")} />
             </div>
-            <Input
-              id="host"
-              placeholder="http://sonarr:8989"
-              {...register("host")}
-            />
+            <Input id="host" placeholder="http://sonarr:8989" {...register("host")} />
             {formState.errors.host ? (
-              <p className="text-xs text-destructive">
-                {formState.errors.host.message}
-              </p>
+              <p className="text-xs text-destructive">{formState.errors.host.message}</p>
             ) : null}
           </div>
 
@@ -245,19 +224,13 @@ export function InstanceDialog({
               id="apiKey"
               type="password"
               autoComplete="off"
-              placeholder={
-                apiKeyIsMasked ? t("apiKeyMaskedPlaceholder") : undefined
-              }
+              placeholder={apiKeyIsMasked ? t("apiKeyMaskedPlaceholder") : undefined}
               {...register("apiKey")}
             />
             {formState.errors.apiKey ? (
-              <p className="text-xs text-destructive">
-                {formState.errors.apiKey.message}
-              </p>
+              <p className="text-xs text-destructive">{formState.errors.apiKey.message}</p>
             ) : apiKeyIsMasked ? (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                {t("apiKeyMaskedHint")}
-              </p>
+              <p className="text-xs text-amber-600 dark:text-amber-400">{t("apiKeyMaskedHint")}</p>
             ) : null}
           </div>
 
@@ -332,9 +305,7 @@ export function InstanceDialog({
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="yearMatchingTolerance">
-                    {t("yearMatchingTolerance")}
-                  </Label>
+                  <Label htmlFor="yearMatchingTolerance">{t("yearMatchingTolerance")}</Label>
                   <FieldHint text={t("yearMatchingToleranceHint")} />
                 </div>
                 <Input
@@ -364,20 +335,11 @@ export function InstanceDialog({
             onClick={handleSubmit((d) => testConn(d))}
             disabled={testing || submitting}
           >
-            {testing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plug className="h-4 w-4" />
-            )}
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
             {t("test")}
           </Button>
           <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={onClose}
-              disabled={submitting}
-            >
+            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
               {tCommon("cancel")}
             </Button>
             <Button type="submit" form="instance-form" disabled={submitting}>

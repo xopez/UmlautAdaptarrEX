@@ -7,21 +7,9 @@ import { toast } from "sonner";
 import { AlertTriangle, Loader2, Save } from "lucide-react";
 import { apiFetch } from "@/app/_lib/api-client";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  OperationModePicker,
-  type OperationMode,
-} from "@/components/operation-mode-picker";
-import {
-  RestartServerButton,
-  useCanRestart,
-} from "@/components/restart-server-button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { OperationModePicker, type OperationMode } from "@/components/operation-mode-picker";
+import { RestartServerButton, useCanRestart } from "@/components/restart-server-button";
 import type { OperationModeResponse } from "../_lib/settings-types";
 
 export function OperationModeCard() {
@@ -52,7 +40,7 @@ export function OperationModeCard() {
       toast.success(t("operationMode.saved"));
       setPending(null);
       setRestartRequired(true);
-      qc.invalidateQueries({ queryKey: ["settings"] });
+      void qc.invalidateQueries({ queryKey: ["settings"] });
     },
     onError: () => toast.error(tCommon("error")),
   });

@@ -7,13 +7,7 @@ import { toast } from "sonner";
 import { Database, Download, Plus, Trash2 } from "lucide-react";
 import { apiFetch } from "@/app/_lib/api-client";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,10 +36,9 @@ export function InstancesClient() {
   const [prowlarrOpen, setProwlarrOpen] = useState(false);
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/admin/instances/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) => apiFetch(`/api/admin/instances/${id}`, { method: "DELETE" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["instances"] });
+      void qc.invalidateQueries({ queryKey: ["instances"] });
       toast.success(t("deleted"));
       setDeleteTarget(null);
     },
@@ -63,17 +56,14 @@ export function InstancesClient() {
 
   const onEdit = (instance: Instance) => setEditor({ open: true, instance });
   const onDelete = (instance: Instance) => setDeleteTarget(instance);
-  const onToggle = (id: string, enabled: boolean) =>
-    toggleMut.mutate({ id, enabled });
+  const onToggle = (id: string, enabled: boolean) => toggleMut.mutate({ id, enabled });
   const openCreate = () => setEditor({ open: true, instance: null });
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {t("title")}
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
           <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -19,7 +19,9 @@ export class SessionRetentionScheduler {
   constructor(private readonly opts: SessionRetentionOptions) {}
 
   start(): void {
-    this.timer = setTimeout(() => this.tick(), FIRST_TICK_MS);
+    this.timer = setTimeout(() => {
+      void this.tick();
+    }, FIRST_TICK_MS);
   }
 
   stop(): void {
@@ -33,7 +35,9 @@ export class SessionRetentionScheduler {
 
   private async tick(): Promise<void> {
     await this.purge();
-    this.timer = setTimeout(() => this.tick(), INTERVAL_MS);
+    this.timer = setTimeout(() => {
+      void this.tick();
+    }, INTERVAL_MS);
   }
 
   private async purge(): Promise<number> {
@@ -50,20 +54,13 @@ export class SessionRetentionScheduler {
         new Promise<never>((_, reject) =>
           setTimeout(
             () =>
-              reject(
-                new Error(
-                  `session retention purge timed out after ${PURGE_TIMEOUT_MS}ms`,
-                ),
-              ),
+              reject(new Error(`session retention purge timed out after ${PURGE_TIMEOUT_MS}ms`)),
             PURGE_TIMEOUT_MS,
           ).unref?.(),
         ),
       ]);
       if (result.count > 0) {
-        this.opts.logger.info(
-          { deleted: result.count },
-          "expired sessions cleaned up",
-        );
+        this.opts.logger.info({ deleted: result.count }, "expired sessions cleaned up");
       }
       return result.count;
     } catch (err) {

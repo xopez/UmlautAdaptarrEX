@@ -1,9 +1,6 @@
 import { getMediaTypeFromCategory } from "../matching/category";
 import { renameForBooksAndAudio } from "../matching/books-audio";
-import {
-  renameForMoviesAndTv,
-  type RenameSearchItem,
-} from "../matching/rename";
+import { renameForMoviesAndTv, type RenameResult, type RenameSearchItem } from "../matching/rename";
 import { replaceSeparatorsWithSpace } from "../matching/separator";
 import { removeAccentButKeepDiacritics } from "../normalization/accents";
 import { getActiveLanguagePack, type LanguagePack } from "../plugins";
@@ -28,10 +25,7 @@ export interface RewriteSearchItem {
   yearMatchingTolerance?: number | null;
 }
 
-type SearchItemLookup = (
-  mediaType: MediaType,
-  cleanTitle: string,
-) => RewriteSearchItem | null;
+type SearchItemLookup = (mediaType: MediaType, cleanTitle: string) => RewriteSearchItem | null;
 
 export interface RewriteOptions {
   /** Concrete search item; when provided, `lookup` is ignored. */
@@ -40,11 +34,7 @@ export interface RewriteOptions {
   lookup?: SearchItemLookup | undefined;
   /** Invoked for every rewrite (e.g. to record RenameHistory). */
   onRename?:
-    | ((event: {
-        originalTitle: string;
-        rewrittenTitle: string;
-        mediaType: MediaType;
-      }) => void)
+    | ((event: { originalTitle: string; rewrittenTitle: string; mediaType: MediaType }) => void)
     | undefined;
   /**
    * Invoked when a search item *was* matched for an entry but the rename was
@@ -56,9 +46,7 @@ export interface RewriteOptions {
     | ((event: {
         originalTitle: string;
         mediaType: MediaType;
-        reason: NonNullable<
-          import("../matching/rename").RenameResult["reason"]
-        >;
+        reason: NonNullable<RenameResult["reason"]>;
         expectedTitle: string;
       }) => void)
     | undefined;
@@ -128,10 +116,7 @@ function readCategory(value: RssItem["category"]): string[] {
   return out;
 }
 
-export function rewriteIndexerXml(
-  xml: string,
-  options: RewriteOptions,
-): string {
+export function rewriteIndexerXml(xml: string, options: RewriteOptions): string {
   const pack = options.pack ?? getActiveLanguagePack();
   const tree = parseXml(xml) as {
     rss?: { channel?: { item?: RssItem | RssItem[] } };

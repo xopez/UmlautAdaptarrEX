@@ -100,29 +100,25 @@ interface QueuedLog {
 const QUEUE: QueuedLog[] = [];
 let flushTimer: NodeJS.Timeout | null = null;
 
+async function flushQueue(): Promise<void> {
+  flushTimer = null;
+  if (QUEUE.length === 0) return;
+  const batch = QUEUE.splice(0, QUEUE.length);
+  try {
+    await prisma.logEntry.createMany({ data: batch });
+  } catch {
+    /* DB unavailable, non-fatal */
+  }
+}
+
 function scheduleFlush(): void {
   if (flushTimer) return;
-  flushTimer = setTimeout(async () => {
-    flushTimer = null;
-    if (QUEUE.length === 0) return;
-    const batch = QUEUE.splice(0, QUEUE.length);
-    try {
-      await prisma.logEntry.createMany({ data: batch });
-    } catch {
-      /* DB unavailable — non-fatal */
-    }
+  flushTimer = setTimeout(() => {
+    void flushQueue();
   }, 1000);
 }
 
-const VALID_LEVELS = new Set([
-  "trace",
-  "debug",
-  "info",
-  "warn",
-  "error",
-  "fatal",
-  "silent",
-]);
+const VALID_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal", "silent"]);
 
 function resolveLogLevel(isDev: boolean): string {
   const fallback = isDev ? "debug" : "info";
@@ -151,9 +147,10 @@ export function createLogger(deps: LoggerDeps = {}): pino.Logger {
     formatters: {
       log(obj) {
         const r = redactValue(obj);
-        return (
-          r && typeof r === "object" && !Array.isArray(r) ? r : { value: r }
-        ) as Record<string, unknown>;
+        return (r && typeof r === "object" && !Array.isArray(r) ? r : { value: r }) as Record<
+          string,
+          unknown
+        >;
       },
     },
     hooks: {
