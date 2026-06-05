@@ -210,6 +210,38 @@ sudo systemctl enable --now umlautadaptarrex
 journalctl -u umlautadaptarrex -f
 ```
 
+### Variant 5: Proxmox VE (LXC, community script)
+
+> **In development / not yet tested.** The script follows the
+> [community-scripts](https://community-scripts.org/docs/ct/readme) (ProxmoxVED) format, but is not yet
+> in the upstream repo and has not been tested extensively. Use it deliberately and verify the result.
+
+A single command, run on the **Proxmox VE host shell**, creates an LXC container and installs
+UmlautAdaptarrEX inside it (self-hosted from this fork, no ProxmoxVED clone required):
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xpsony/UmlautAdaptarrEX/main/proxmox/community-scripts/ct/umlautadaptarrex.sh)"
+```
+
+What the script does:
+
+- Creates a Debian 13 LXC (2 vCPU, 2048 MB RAM for the build, 6 GB disk).
+- Installs Node.js 26 + pnpm (via corepack), fetches the latest release of `xpsony/UmlautAdaptarrEX`
+  and runs `pnpm build:prod` + `pnpm prisma:deploy`.
+- Prompts for the three service ports during install (pre-filled with the defaults, press Enter to accept):
+  - **5007** — web UI + setup wizard (`http://<IP>:5007/setup`)
+  - **5005** — public API + indexer routes for the \*arrs
+  - **5006** — Prowlarr TCP proxy (basic auth, set during setup)
+- Runs the app as a systemd service (`umlautadaptarrex`). The SQLite DB lives at
+  `/opt/umlautadaptarrex/data/` and is preserved across updates.
+
+After it finishes, open the setup in your browser: `http://<container-IP>:5007/setup`.
+
+Changing ports later: edit `/opt/umlautadaptarrex/.env` (`UMLAUTADAPTARREX_WEBUI_PORT` /
+`_LEGACYAPI_PORT` / `_PROXY_PORT`) and run `systemctl restart umlautadaptarrex`. An LXC has its own IP,
+so there is no host-side port mapping. Details and maintenance notes are in
+[`proxmox/community-scripts/README.md`](proxmox/community-scripts/README.md).
+
 ## Ports
 
 | Port | Service        | Purpose                                                                         |

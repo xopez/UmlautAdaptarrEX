@@ -215,6 +215,38 @@ sudo systemctl enable --now umlautadaptarrex
 journalctl -u umlautadaptarrex -f
 ```
 
+### Variante 5: Proxmox VE (LXC, Community-Script)
+
+> **In Entwicklung / noch nicht getestet.** Das Skript folgt dem
+> [community-scripts](https://community-scripts.org/docs/ct/readme)-Format (ProxmoxVED), ist aber noch
+> nicht im Upstream-Repo und noch nicht ausgiebig getestet. Verwende es bewusst und prüfe das Ergebnis.
+
+Ein einzeiliger Befehl, direkt in der **Shell des Proxmox-VE-Hosts** ausgeführt, legt einen LXC-Container
+an und installiert UmlautAdaptarrEX darin (self-hosted aus diesem Fork, kein ProxmoxVED-Clone nötig):
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xpsony/UmlautAdaptarrEX/main/proxmox/community-scripts/ct/umlautadaptarrex.sh)"
+```
+
+Was das Skript tut:
+
+- Legt einen Debian-13-LXC an (2 vCPU, 2048 MB RAM für den Build, 6 GB Disk).
+- Installiert Node.js 26 + pnpm (via corepack), holt das neueste Release von `xpsony/UmlautAdaptarrEX`
+  und führt `pnpm build:prod` + `pnpm prisma:deploy` aus.
+- Fragt während der Installation die drei Service-Ports ab (vorbelegt mit den Defaults, Enter übernimmt):
+  - **5007** — Web-UI + Setup-Wizard (`http://<IP>:5007/setup`)
+  - **5005** — Public API + Indexer-Routen für die \*arrs
+  - **5006** — Prowlarr-TCP-Proxy (Basic-Auth, wird im Setup gesetzt)
+- Startet die App als systemd-Dienst (`umlautadaptarrex`). Die SQLite-DB liegt unter
+  `/opt/umlautadaptarrex/data/` und bleibt über Updates erhalten.
+
+Nach dem Lauf das Setup im Browser öffnen: `http://<Container-IP>:5007/setup`.
+
+Ports später ändern: `/opt/umlautadaptarrex/.env` bearbeiten (`UMLAUTADAPTARREX_WEBUI_PORT` /
+`_LEGACYAPI_PORT` / `_PROXY_PORT`) und `systemctl restart umlautadaptarrex`. Ein LXC hat eine eigene IP,
+es gibt also kein Host-seitiges Port-Mapping. Details und Wartungshinweise stehen in
+[`proxmox/community-scripts/README.md`](proxmox/community-scripts/README.md).
+
 ## Ports
 
 | Port | Dienst         | Zweck                                                                           |
