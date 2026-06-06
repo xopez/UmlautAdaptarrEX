@@ -629,7 +629,8 @@
     "creditsTitle": "Acknowledgements",
     "creditsHint": "",
     "creditsBody": "Based on the idea and logic of PCJones.",
-    "creditsApi": "Many thanks to PCJones for providing the Title API."
+    "creditsApi": "Many thanks to PCJones for providing the Title API.",
+    "creditsTruenas": "Many thanks to xopez for the TrueNAS community app."
   },
   "changelog": {
     "dialogTitle": "What's new",

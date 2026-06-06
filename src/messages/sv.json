@@ -604,7 +604,8 @@
     "creditsTitle": "Tack",
     "creditsHint": "På vems axlar detta projekt står.",
     "creditsBody": "Bygger på PCJones idé och logik.",
-    "creditsApi": "Stort tack till PCJones för Title-API:t."
+    "creditsApi": "Stort tack till PCJones för Title-API:t.",
+    "creditsTruenas": "Stort tack till xopez för TrueNAS-community-appen."
   },
   "changelog": {
     "dialogTitle": "Nyheter",

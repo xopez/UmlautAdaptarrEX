@@ -23,6 +23,27 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.2.3",
+    date: "2026-06-06",
+    title: "1.2.3: TrueNAS app & unprivileged (non-root) container startup",
+    description:
+      "UmlautAdaptarrEX is now available as a TrueNAS Community app, and the container can run fully unprivileged. root is used only for the one-time /data ownership fix and the app process never runs as root. No database changes.",
+    items: [
+      {
+        type: "feature",
+        text: 'UmlautAdaptarrEX is now available in the TrueNAS app catalog — search for "UmlautAdaptarrEX" under Apps → Discover Apps to install. The app is maintained by xopez (github.com/xopez), many thanks.',
+      },
+      {
+        type: "improvement",
+        text: "The image can now be started directly as a non-root user (docker run --user, a compose user: entry, Kubernetes runAsUser, or the TrueNAS app's run_as field). In that case the entrypoint skips the chown/gosu step and runs directly under the given UID/GID, so the container no longer needs the CHOWN/SETUID/SETGID capabilities or root, provided the /data volume is already owned by that UID/GID.",
+      },
+      {
+        type: "improvement",
+        text: "Security: when the container does start as root (the default), root is used only for the one-time chown of /data; the entrypoint then drops to PUID:PGID via gosu before launching the app, so the application process never runs as root. Fully backward-compatible with the existing root-by-default setup.",
+      },
+    ],
+  },
+  {
     version: "1.2.2",
     date: "2026-06-05",
     title: "1.2.2: Proxmox LXC installer, ports in the UI & setup fixes",

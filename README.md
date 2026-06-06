@@ -24,20 +24,10 @@
 
 # UmlautAdaptarrEX
 
-> **Hinweis zum Reifegrad**
->
-> Dies ist keine frühe Beta-Version mehr. Im Prinzip sollte alles mehr oder weniger funktionieren.
->
-> **Information zu Radarr:**
->
-> - TMDB / TVDB Key wird benötigt damit Radarr funktioniert
-> - TMDB / TVDB Key wird benötigt damit Plugins funktionieren
->
 > **Folgende Dinge müssen noch mehr getestet werden:**
 >
 > - Legacy API (aktuell wird überlegt, ob dieser Modus entfernt wird)
 > - Die Sprach-Plugins Französisch und Schwedisch
-> - Das Proxmox-Community-Skript ist noch nicht getestet und befindet sich aktuell in Entwicklung
 >
 > Sollte ein Release nicht korrekt benannt werden bzw. Bugs auftreten, bitte erstmal PM an mich.
 >
@@ -82,6 +72,11 @@ importiert werden.
 | **Sprach-Plugins**: Deutsche Umlaute (default), Schwedische Umlaute, Französische Akzente                                              |   ✓    |
 | **i18n**: Deutsch + Englisch                                                                                                           |   ✓    |
 
+> **Hinweis zu Radarr:**
+>
+> - TMDB / TVDB Key wird benötigt, damit Radarr funktioniert.
+> - TMDB / TVDB Key wird benötigt, damit die Plugins funktionieren.
+
 ## Sprach-Plugins
 
 Sprach-Plugins steuern, wie Titel normalisiert werden und welche Schreibvarianten gegen den Indexer gefahren werden.
@@ -114,10 +109,19 @@ Es liegen zwei Compose-Dateien im Repository:
 | `docker-compose.yml`         | Lokaler Build (`build: .`)                   | Du hast das Repository geklont und willst aus dem Quellcode bauen. |
 | `docker-compose.release.yml` | `lexfi/umlautadaptarrex:latest` (Docker Hub) | Schnellster Weg, kein Repo-Checkout nötig.                         |
 
-Hinweis: das Image korrigiert die Rechte des `/data`-Volumes beim Start automatisch (Default
-`PUID=1000`, `PGID=1000`). Ein manueller `chown` ist nicht mehr nötig. Wer Files unter `./data` mit
-einem anderen Host-User besitzen möchte, setzt `PUID`/`PGID` als Env-Variablen (siehe Kommentare in
-der jeweiligen Compose-Datei).
+Hinweis: läuft der Container als root (Standard), korrigiert das Image die Rechte des `/data`-Volumes
+beim Start automatisch (Default `PUID=1000`, `PGID=1000`). Ein manueller `chown` ist nicht mehr nötig.
+root wird dabei **ausschließlich** für diesen einmaligen `chown` benötigt: der Entrypoint legt die
+Rechte zurecht und wechselt dann via `gosu` auf `PUID:PGID`. Der eigentliche App-Prozess
+(`node start.mjs`) läuft also nie als root. Wer Files unter `./data` mit einem anderen Host-User
+besitzen möchte, setzt `PUID`/`PGID` als Env-Variablen (siehe Kommentare in der jeweiligen
+Compose-Datei).
+
+Unprivilegierter Betrieb: das Image kann auch direkt als Nicht-root-User gestartet werden
+(`docker run --user 1000:1000`, ein `user:`-Eintrag in der Compose-Datei, Kubernetes `runAsUser` oder
+das `run_as`-Feld der TrueNAS-App). In diesem Fall überspringt der Entrypoint `chown`/`gosu` und läuft
+direkt unter der vorgegebenen UID/GID, ganz ohne `CHOWN`/`SETUID`/`SETGID`-Capabilities. Voraussetzung:
+das `/data`-Volume gehört dieser UID/GID bereits (manuell `chown` oder via TrueNAS-ACL).
 
 1. Container starten. Entweder mit Image vom Docker Hub:
 
@@ -164,7 +168,8 @@ Entrypoint auf `PUID:PGID` (Default `1000:1000`) gesetzt. Ein manueller `chown` 
 Optional als zusätzliche `-e`-Flags:
 
 - `PUID=1000` / `PGID=1000` (UID und GID, mit denen der App-Prozess läuft. Files unter `./data`
-  bekommen diese Owner-IDs).
+  bekommen diese Owner-IDs). Greift nur, wenn der Container als root startet; bei `--user` werden
+  `PUID`/`PGID` ignoriert und die App läuft direkt unter der angegebenen UID/GID.
 - `LOG_LEVEL=info` (Pino-Level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`).
 
 Update: `docker pull lexfi/umlautadaptarrex:latest && docker rm -f umlautadaptarrex` und Befehl oben
@@ -180,7 +185,15 @@ ohne Template-URL. Das Template wird im separaten Repository
 Installationsanleitung, Template-URL und Feld-Defaults (Ports, PUID/PGID, Appdata-Pfad) stehen
 im README des Template-Repos.
 
-### Variante 4: Bare-Metal / ohne Docker
+### Variante 4: TrueNAS App
+
+UmlautAdaptarrEX ist als Community-App im TrueNAS-App-Katalog verfügbar:
+[apps.truenas.com/catalog/umlautadaptarrex_community](https://apps.truenas.com/catalog/umlautadaptarrex_community/).
+In der TrueNAS-Oberfläche unter **Apps → Discover Apps** nach „UmlautAdaptarrEX" suchen und installieren.
+
+Die App wird von [xopez](https://github.com/xopez) gepflegt, vielen Dank dafür.
+
+### Variante 5: Bare-Metal / ohne Docker
 
 Funktioniert auf jedem Linux- oder macOS-Host mit Node `>= 24` und `pnpm 11.3.0`. Der Supervisor in
 [`start.mjs`](start.mjs) übernimmt Migration, Fastify (Port 5005 + TCP-Proxy 5006) und Next.js (Port
@@ -213,11 +226,12 @@ sudo systemctl enable --now umlautadaptarrex
 journalctl -u umlautadaptarrex -f
 ```
 
-### Variante 5: Proxmox VE (LXC, Community-Script)
+### Variante 6: Proxmox VE (LXC, Community-Script)
 
-> **In Entwicklung / noch nicht getestet.** Das Skript folgt dem
-> [community-scripts](https://community-scripts.org/docs/ct/readme)-Format (ProxmoxVED), ist aber noch
-> nicht im Upstream-Repo und noch nicht ausgiebig getestet. Verwende es bewusst und prüfe das Ergebnis.
+> **Funktioniert, wird derzeit aber nicht bei den Proxmox Helper Scripts aufgenommen.** Das Skript folgt
+> dem [community-scripts](https://community-scripts.org/docs/ct/readme)-Format (ProxmoxVED) und ist
+> einsatzbereit. Aufgrund der aktuellen Regularien des Projekts kann es derzeit nicht in das offizielle
+> Proxmox-Helper-Scripts-Repo aufgenommen werden, daher wird es self-hosted aus diesem Fork bereitgestellt.
 
 Ein einzeiliger Befehl, direkt in der **Shell des Proxmox-VE-Hosts** ausgeführt, legt einen LXC-Container
 an und installiert UmlautAdaptarrEX darin (self-hosted aus diesem Fork, kein ProxmoxVED-Clone nötig):
@@ -229,7 +243,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/xpsony/UmlautAdaptarrEX/
 Was das Skript tut:
 
 - Legt einen Debian-13-LXC an (2 vCPU, 2048 MB RAM für den Build, 6 GB Disk).
-- Installiert Node.js 26 + pnpm (via corepack), holt das neueste Release von `xpsony/UmlautAdaptarrEX`
+- Installiert Node.js 26 + pnpm (via npm), holt das neueste Release von `xpsony/UmlautAdaptarrEX`
   und führt `pnpm build:prod` + `pnpm prisma:deploy` aus.
 - Fragt während der Installation die drei Service-Ports ab (vorbelegt mit den Defaults, Enter übernimmt):
   - **5007** — Web-UI + Setup-Wizard (`http://<IP>:5007/setup`)
@@ -467,6 +481,8 @@ src/
 ## Credits
 
 Basiert auf der Idee und Logik von [PCJones/UmlautAdaptarr](https://github.com/PCJones/UmlautAdaptarr).
+
+Danke an [xopez](https://github.com/xopez) für die TrueNAS-Community-App.
 
 ## Disclaimer
 

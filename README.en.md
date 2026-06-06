@@ -24,20 +24,10 @@
 
 # UmlautAdaptarrEX
 
-> **Maturity note**
->
-> This is no longer an early beta version. In principle everything should more or less work.
->
-> **Information about Radarr:**
->
-> - TMDB / TVDB key is required for Radarr to work
-> - TMDB / TVDB key is required for plugins to work
->
 > **The following still needs more testing:**
 >
 > - Legacy API (removal of this mode is currently under consideration)
 > - The French and Swedish language plugins
-> - The Proxmox community script has not been tested yet and is currently in development
 >
 > If a release is not named correctly or bugs occur, please send me a PM first.
 >
@@ -81,6 +71,11 @@ imported.
 | **Language plugins**: German umlauts (default), Swedish umlauts, French accents                                                         |   ✓    |
 | **i18n**: German + English                                                                                                              |   ✓    |
 
+> **Information about Radarr:**
+>
+> - A TMDB / TVDB key is required for Radarr to work.
+> - A TMDB / TVDB key is required for the plugins to work.
+
 ## Language Plugins
 
 Language plugins control how titles are normalized and which spelling variants are sent to the indexer. They can be
@@ -112,9 +107,18 @@ The repository contains two compose files:
 | `docker-compose.yml`         | Local build (`build: .`)                     | You cloned the repository and want to build from source. |
 | `docker-compose.release.yml` | `lexfi/umlautadaptarrex:latest` (Docker Hub) | Fastest way, no repo checkout needed.                    |
 
-Note: the image fixes permissions on the `/data` volume automatically at startup (default
-`PUID=1000`, `PGID=1000`). A manual `chown` is no longer needed. If you want files under `./data` to be owned by a
-different host user, set `PUID`/`PGID` as env variables (see comments in the respective compose file).
+Note: when the container runs as root (the default), the image fixes permissions on the `/data` volume
+automatically at startup (default `PUID=1000`, `PGID=1000`). A manual `chown` is no longer needed. root
+is used **only** for this one-time `chown`: the entrypoint fixes ownership and then switches to
+`PUID:PGID` via `gosu`, so the application process (`node start.mjs`) never runs as root. If you want
+files under `./data` to be owned by a different host user, set `PUID`/`PGID` as env variables (see
+comments in the respective compose file).
+
+Unprivileged operation: the image can also be started directly as a non-root user
+(`docker run --user 1000:1000`, a `user:` entry in the compose file, Kubernetes `runAsUser`, or the
+TrueNAS app's `run_as` field). In that case the entrypoint skips `chown`/`gosu` and runs directly under
+the given UID/GID, with no need for `CHOWN`/`SETUID`/`SETGID` capabilities. Prerequisite: the `/data`
+volume is already owned by that UID/GID (chown it manually or via the TrueNAS ACL).
 
 1. Start the container. Either with the image from Docker Hub:
 
@@ -159,7 +163,8 @@ to `PUID:PGID` (default `1000:1000`). A manual `chown` is not needed.
 Optional additional `-e` flags:
 
 - `PUID=1000` / `PGID=1000` (UID and GID under which the app process runs. Files under `./data` will be owned by
-  these IDs).
+  these IDs). Only takes effect when the container starts as root; with `--user`, `PUID`/`PGID` are
+  ignored and the app runs directly under the given UID/GID.
 - `LOG_LEVEL=info` (Pino level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`).
 
 Update: `docker pull lexfi/umlautadaptarrex:latest && docker rm -f umlautadaptarrex` and re-run the command above.
@@ -175,7 +180,15 @@ URL required. The template is maintained in a separate repository:
 Installation instructions, template URL, and field defaults (ports, PUID/PGID, appdata path) are
 documented in the template repo's README.
 
-### Variant 4: Bare metal / without Docker
+### Variant 4: TrueNAS App
+
+UmlautAdaptarrEX is available as a community app in the TrueNAS app catalog:
+[apps.truenas.com/catalog/umlautadaptarrex_community](https://apps.truenas.com/catalog/umlautadaptarrex_community/).
+In the TrueNAS UI, go to **Apps → Discover Apps**, search for "UmlautAdaptarrEX" and install it.
+
+The app is maintained by [xopez](https://github.com/xopez), many thanks for that.
+
+### Variant 5: Bare metal / without Docker
 
 Works on any Linux or macOS host with Node `>= 24` and `pnpm 11.3.0`. The supervisor in
 [`start.mjs`](start.mjs) handles migration, Fastify (port 5005 + TCP proxy 5006) and Next.js (port
@@ -208,11 +221,12 @@ sudo systemctl enable --now umlautadaptarrex
 journalctl -u umlautadaptarrex -f
 ```
 
-### Variant 5: Proxmox VE (LXC, community script)
+### Variant 6: Proxmox VE (LXC, community script)
 
-> **In development / not yet tested.** The script follows the
-> [community-scripts](https://community-scripts.org/docs/ct/readme) (ProxmoxVED) format, but is not yet
-> in the upstream repo and has not been tested extensively. Use it deliberately and verify the result.
+> **Works, but currently not accepted into the Proxmox Helper Scripts.** The script follows the
+> [community-scripts](https://community-scripts.org/docs/ct/readme) (ProxmoxVED) format and is ready to use.
+> Due to the project's current regulations it cannot be included in the official Proxmox Helper Scripts repo
+> at the moment, so it is provided self-hosted from this fork.
 
 A single command, run on the **Proxmox VE host shell**, creates an LXC container and installs
 UmlautAdaptarrEX inside it (self-hosted from this fork, no ProxmoxVED clone required):
@@ -224,7 +238,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/xpsony/UmlautAdaptarrEX/
 What the script does:
 
 - Creates a Debian 13 LXC (2 vCPU, 2048 MB RAM for the build, 6 GB disk).
-- Installs Node.js 26 + pnpm (via corepack), fetches the latest release of `xpsony/UmlautAdaptarrEX`
+- Installs Node.js 26 + pnpm (via npm), fetches the latest release of `xpsony/UmlautAdaptarrEX`
   and runs `pnpm build:prod` + `pnpm prisma:deploy`.
 - Prompts for the three service ports during install (pre-filled with the defaults, press Enter to accept):
   - **5007** — web UI + setup wizard (`http://<IP>:5007/setup`)
@@ -462,6 +476,8 @@ src/
 ## Credits
 
 Based on the idea and logic of [PCJones/UmlautAdaptarr](https://github.com/PCJones/UmlautAdaptarr).
+
+Thanks to [xopez](https://github.com/xopez) for the TrueNAS community app.
 
 ## Disclaimer
 
