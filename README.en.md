@@ -185,7 +185,15 @@ URL required. The template is maintained in a separate repository:
 Installation instructions, template URL, and field defaults (ports, PUID/PGID, appdata path) are
 documented in the template repo's README.
 
-### Variant 4: Bare metal / without Docker
+### Variant 4: TrueNAS App
+
+UmlautAdaptarrEX is available as a community app in the TrueNAS app catalog:
+[apps.truenas.com/catalog/umlautadaptarrex_community](https://apps.truenas.com/catalog/umlautadaptarrex_community/).
+In the TrueNAS UI, go to **Apps → Discover Apps**, search for "UmlautAdaptarrEX" and install it.
+
+The app is maintained by [xopez](https://github.com/xopez), many thanks for that.
+
+### Variant 5: Bare metal / without Docker
 
 Works on any Linux or macOS host with Node `>= 24` and `pnpm 11.3.0`. The supervisor in
 [`start.mjs`](start.mjs) handles migration, Fastify (port 5005 + TCP proxy 5006) and Next.js (port
@@ -473,6 +481,8 @@ src/
 ## Credits
 
 Based on the idea and logic of [PCJones/UmlautAdaptarr](https://github.com/PCJones/UmlautAdaptarr).
+
+Thanks to [xopez](https://github.com/xopez) for the TrueNAS community app.
 
 ## Disclaimer
 

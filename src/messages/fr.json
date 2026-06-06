@@ -604,7 +604,8 @@
     "creditsTitle": "Remerciements",
     "creditsHint": "Sur les épaules de qui ce projet repose.",
     "creditsBody": "Basé sur l'idée et la logique de PCJones.",
-    "creditsApi": "Un grand merci à PCJones pour la mise à disposition de la Title-API."
+    "creditsApi": "Un grand merci à PCJones pour la mise à disposition de la Title-API.",
+    "creditsTruenas": "Un grand merci à xopez pour l'application communautaire TrueNAS."
   },
   "changelog": {
     "dialogTitle": "Nouveautés",
