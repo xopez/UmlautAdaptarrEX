@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.3 — 2026-06-06
+
+Lets the container run fully unprivileged and ships as a TrueNAS Community app. Until now the image required root at startup; root is now used only for the one-time `/data` ownership fix and the application process never runs as root. No schema changes.
+
+### Features
+
+- **TrueNAS Community app:** UmlautAdaptarrEX is now available in the TrueNAS app catalog ([apps.truenas.com/catalog/umlautadaptarrex_community](https://apps.truenas.com/catalog/umlautadaptarrex_community/)) — search for "UmlautAdaptarrEX" under Apps → Discover Apps to install. The app is maintained by [xopez](https://github.com/xopez), many thanks.
+
+### Improvements
+
+- **Unprivileged container startup:** The image can now be started directly as a non-root user (`docker run --user`, a compose `user:` entry, Kubernetes `runAsUser`, or the TrueNAS app's `run_as` field). In that case the entrypoint skips the `chown`/`gosu` step and runs directly under the given UID/GID, so the container no longer needs the `CHOWN`/`SETUID`/`SETGID` capabilities or root, provided the `/data` volume is already owned by that UID/GID.
+
+### Security & maintenance
+
+- **root only for ownership setup:** When the container does start as root (the default), root is used **only** for the one-time `chown` of `/data`; the entrypoint then drops to `PUID:PGID` via `gosu` before launching the app, so the application process (`node start.mjs`) never runs as root. The startup path is fully backward-compatible with the existing root-by-default compose setup.
+
+### Upgrade notes
+
+No action needed for the default Docker / compose setup. To run unprivileged, pre-own the `/data` volume with your target UID/GID and start the container with that user (e.g. `--user 1000:1000`); `PUID`/`PGID` are ignored in that mode since the orchestrator already sets the UID/GID.
+
 ## 1.2.2 — 2026-06-05
 
 Adds a Proxmox LXC community-script, surfaces the actual service ports in the UI, and fixes API proxying plus the setup flow behind Docker NAT. Includes one additive database migration (`AdminUser.lastSeenChangelog`), applied automatically on start.

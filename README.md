@@ -24,20 +24,10 @@
 
 # UmlautAdaptarrEX
 
-> **Hinweis zum Reifegrad**
->
-> Dies ist keine frühe Beta-Version mehr. Im Prinzip sollte alles mehr oder weniger funktionieren.
->
-> **Information zu Radarr:**
->
-> - TMDB / TVDB Key wird benötigt damit Radarr funktioniert
-> - TMDB / TVDB Key wird benötigt damit Plugins funktionieren
->
 > **Folgende Dinge müssen noch mehr getestet werden:**
 >
 > - Legacy API (aktuell wird überlegt, ob dieser Modus entfernt wird)
 > - Die Sprach-Plugins Französisch und Schwedisch
-> - Das Proxmox-Community-Skript ist noch nicht getestet und befindet sich aktuell in Entwicklung
 >
 > Sollte ein Release nicht korrekt benannt werden bzw. Bugs auftreten, bitte erstmal PM an mich.
 >
@@ -81,6 +71,11 @@ importiert werden.
 | **Mehrere Title-Provider** mit konfigurierbarer Reihenfolge: pcjones-API, TVDB, TMDB                                                   |   ✓    |
 | **Sprach-Plugins**: Deutsche Umlaute (default), Schwedische Umlaute, Französische Akzente                                              |   ✓    |
 | **i18n**: Deutsch + Englisch                                                                                                           |   ✓    |
+
+> **Hinweis zu Radarr:**
+>
+> - TMDB / TVDB Key wird benötigt, damit Radarr funktioniert.
+> - TMDB / TVDB Key wird benötigt, damit die Plugins funktionieren.
 
 ## Sprach-Plugins
 
